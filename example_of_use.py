@@ -115,7 +115,7 @@ with open(f'{name}.molden', 'w') as f1:
 
 #it will give you some options, accept only the first: Do you want to generate a new Molden file? ([Yes] / No)
 subprocess.call(f'./molden2aim.exe -i {name}.molden',shell=True)
-f'./JANPA_bin -i {name}.molden -HybrOptOccConvThresh {threshold}  -CLPO2LHO_File {name}_CLPO2LHO -LHO2NAO_File {name}_LHO2NAO -NAO2AO_File {name}_NAO2AO -MatrixFloatNumberFormat %.10f',shell=True) # using mol.transform_orbitals()
+subprocess.call(f'./JANPA_bin -i {name}.molden -HybrOptOccConvThresh {threshold}  -CLPO2LHO_File {name}_CLPO2LHO -LHO2NAO_File {name}_LHO2NAO -NAO2AO_File {name}_NAO2AO -MatrixFloatNumberFormat %.10f',shell=True) # using mol.transform_orbitals()
 
 subprocess.call(f'./JANPA_bin -i {name}.molden -CLPO_Molden_File {name}_CLPO.molden -HybrOptOccConvThresh {threshold}',shell=True) #reading the output molden file
 subprocess.call(f'./replace_lnx.sh {name}_CLPO.molden',shell=True) #if it doesnt work here: chmod u+rx replace.sh and run it again
