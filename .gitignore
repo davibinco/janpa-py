@@ -1,0 +1,22 @@
+# Carpetas de compilación y salida (asegura ignorar todo el contenido)
+out/
+bin/
+
+# IDEs y configuración de editores
+.idea/
+.vscode/
+*.iml
+
+# Archivos de configuración y datos específicos
+*.molden
+*.ini
+*.jar
+
+# Ejecutables o carpetas específicas
+graph
+JANPA_linux
+molden2molden_linux
+
+# Si quieres ser muy específico con subcarpetas en cualquier nivel:
+**/out/
+**/.idea/

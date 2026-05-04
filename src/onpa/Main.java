@@ -252,6 +252,10 @@ public class Main {
 
         //molden.Compress();
 
+        if (!Options.Edges.get_String().isEmpty()){
+            out.println();
+            out.println("User defined Edges : " + Options.Edges.get_String());
+        }
 
         NPA npa = new NPA(Options); // create NPA 'workhorse' and transfer the options to this class
 
@@ -329,7 +333,7 @@ public class Main {
         print_bond_indices(WibergIndices, npa.Centers, Options.WiebergBondOrders_File.get_String());
                 
         printout.PrintStars();
-        
+        out.println("==========================================================================================================");
         PropertyOptimizedOrbitals LPOs = new PropertyOptimizedOrbitals();        
         //* * * * * * * * * * * * * * * * * * * * * * * * * * *
         // THE 2-ND KEY POINT: CREATE LPOs AND CLPOs
@@ -345,7 +349,6 @@ public class Main {
         out.println("Atomic connectivity analysis based on CLPO bonding graph:");
         out.println();
         int[] clpoFragmentIds = LPOs.LOconnectivity(LPOs.CLPO_descript, npa.NPA_charges);
-        
         printout.PrintStars();
 
         //* * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -616,7 +619,7 @@ public class Main {
                 //occs[j] =  d_orbs.get(j, j);
                 ene[j] = j;
             }
-            printout.Export_Orbitals(molden, orbs2ao, occs, ene,  orbs2ao_fnames[i], false, orbs2ao_comments[i] );
+            printout.Export_Orbitals(molden, orbs2ao, occs, ene,  orbs2ao_fnames[i], true, orbs2ao_comments[i] );
         }
         
                 

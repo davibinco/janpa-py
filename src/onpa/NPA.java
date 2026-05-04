@@ -729,7 +729,6 @@ public class NPA {
                 /* It is important to allocate memory for ALL newly created basis functions for this center
                  * BEFORE their coefficients are calculated.
                  */
-
                 for (int SourceBF=0; SourceBF < NBasisFunctionsUsedForThisL; SourceBF++) {
                     // Let the new funciton have the same m and radial label as the source function
                     // (however, the functions standing behing the formal radial part numbers will be different now!)
@@ -1006,7 +1005,7 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
         
         // Label eacha of those weight-sorted PNAOs as "NMB" or "NRB"
         // Use NMB_per_Atom array in that process
-        out.println(" Number of basis functions in teh Natural Minimal Basis (NMB) set for each center: ");
+        out.println(" Number of basis functions in the Natural Minimal Basis (NMB) set for each center: ");
         int LMX = 5; //'G'+1
         int[] functions_used = new int[ LMX ]; // index = value of L
         // loop over all atoms
@@ -1184,9 +1183,11 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
             //
             //out.printf("%3d\t%.15f%n",original_NMB_numbers[i],w_i);
             //
-            if (w_i < minWeight) minWeight = w_i;
+            if (w_i <= minWeight) minWeight = w_i;
+            if (w_i <= 1.e-7) w_i = 1.e-7; // Just safety for the inverse
             for (int j=i; j<N_NMB; j++) {
                 double w_j = PNAOs[original_NMB_numbers[j]].weight;
+                if (w_j <= 1.e-7) w_j = 1.e-7; // Just safety for the inverse
                 double wsw_ij = NMB_Overlap_Matrix.get(i, j) * w_i * w_j;
                 WSW_NMB.set(i, j, wsw_ij );
                 WSW_NMB.set(j, i, wsw_ij );
@@ -1314,7 +1315,7 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
         SDS_new = ee.TransformMatrixToNewBasis(SDS_new, OS1, true); //OS1.times(SDS_new).times(OS1.transpose());
 
         //-----------------------------------------------
-        if (verbose_print) {
+        if (true) {
             out.println("Diagonal elements of SDS matrix after 1-st Schmidt transformation for new NRB functions:");
             double sum = 0;
             for(int i=0; i<original_NRB_numbers.length; ++i) {

@@ -9,4 +9,8 @@ public class PairEdge {
         this.b = b;
         this.wt = wt;
     }
+    @Override
+    public String toString() {
+        return String.format("PairEdge(a=%d, b=%d, wt=%.2f)", a, b, wt);
+    }
 }

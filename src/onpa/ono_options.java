@@ -92,6 +92,10 @@ public class ono_options {
             new OptionParameter(_FirstOption, "-WibergBondOrders_File", "", 
                     "file for exporting a matrix of Wiberg bond orders \n calculated in NAO basis");
 
+    public OptionParameter Edges =
+            new OptionParameter(_FirstOption, "-edges", "",
+                    "file for exporting a matrix of Wiberg bond orders \n calculated in NAO basis");
+
     //--------------------------------------------------------------------------
     // 'Advanced' options:
     
@@ -129,7 +133,7 @@ public class ono_options {
             new OptionParameter(_FirstOption, "-NRB_new_Overlap_Matrix_File", "", 
                     "");
 
-    // after step 5 (�?intraatomic naturalization’ transformation within the new NRB set):
+    // after step 5 (�?intraatomic naturalization’ transformation within the new NRB set):
     public OptionParameter S_Matrix_after_ON2_File =
             new OptionParameter(_FirstOption, "-S_Matrix_after_ON2_File", "", 
                     "orbital overlap matrix after 2-nd intracenter \n naturalizatoin transformation");

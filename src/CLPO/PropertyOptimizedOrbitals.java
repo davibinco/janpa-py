@@ -5,6 +5,10 @@ import JGints.BasisFunction;
 import Jama.*;
 import MatrixHelper.*;
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import onpa.ono_options;
 import onpa.printout;
 
@@ -347,11 +351,10 @@ public class PropertyOptimizedOrbitals {
      * atomic U matrices and the current hybrid pairing. Can be set to an
      * arbitrary negative value if unknown
      */
-    
-    
+
+    //boolean stop = false;
+    //boolean converged = false; They were inside optimizeHybrids but annoying there
     private double optimizeHybrids(){//double win_prev) {
-        //boolean stop = false;
-        //boolean converged = false;
         int iter = 0;
         
         Matrix[] G = new Matrix[nAtoms]; // gradients w.r.t. U[a]
@@ -599,7 +602,7 @@ public class PropertyOptimizedOrbitals {
      * 
      */
     private Matrix SDS_in_hybrid_basis(int[][] hybrAddresses, LOdescription NAO2HO_holder){ //Matrix[] NAO2HO) {
-        // determine the size of SDS matrix in hybrid basos (nTotHybrids x nTotHybrids)
+        /** determine the size of SDS matrix in hybrid basos (nTotHybrids x nTotHybrids)**/
         int nTotHybrids = 0;
         for (int a=0; a<nAtoms; a++) nTotHybrids += hybridsOfAtoms[a].nValidHybrids;
         
@@ -828,168 +831,173 @@ public class PropertyOptimizedOrbitals {
     }
     
     //--------------------------------------------------------------------------
-    
-    double reconnectHybrids(Matrix D_in_hybrid_basis,  int[][] hybrAddresses, boolean allowall) 
-    {        
+
+    double reconnectHybrids(Matrix D_in_hybrid_basis, int[][] hybrAddresses, boolean allowall)
+    {
         double maxBondIonicityThreshold = options.maxClpoBondIonicityThreshold.get_double();
-        
+
         out.println("Finding an optimal hybrid pairing...");
         boolean do_print = false;
-        int[][] nao_owners = new int[nNAOs][]; // [globalOrbitalId][ hostAtom,  orbitalId @ this atom ]
-        
-        int nEdgesMax = nNAOs*(2*nNAOs-1)/2 ;
-        if (opt_Lewis_mode)
-            nEdgesMax += nNAOs; // for pseudo-nodes, indicating 'no connection'
-        
-        PairEdge[] edges_new = new PairEdge[nEdgesMax];
 
+        int[][] nao_owners = new int[nNAOs][];
+        List<String> graphTable = new ArrayList<>();
+
+        graphTable.add(String.format(
+                "%-4s %-30s %-10s %s",
+                "ID", "Description", "Occupancy", "Composition"
+        ));
+
+        int nEdgesMax = nNAOs * (2 * nNAOs - 1) / 2;
+        if (opt_Lewis_mode)
+            nEdgesMax += nNAOs;
+
+        PairEdge[] edges_new = new PairEdge[nEdgesMax];
         int k = 0;
-        
-        // true pair values
-        for (int a=0; a<nAtoms; a++) {            
-            for(int ha=0; ha<hybridsOfAtoms[a].NAO_indices.length; ha++) {
-                // discard prev. hybrid pairing (init all hybrids with '-1' partners)
-                hybridsOfAtoms[ a ].friendAtomIndex[ ha ] = -1;
-                hybridsOfAtoms[ a ].friendHybridIndex[ ha ] = -1;
-                
+
+        // -------- Build edges --------
+        for (int a = 0; a < nAtoms; a++) {
+            for (int ha = 0; ha < hybridsOfAtoms[a].NAO_indices.length; ha++) {
+
+                hybridsOfAtoms[a].friendAtomIndex[ha] = -1;
+                hybridsOfAtoms[a].friendHybridIndex[ha] = -1;
+
                 int iA = hybrAddresses[a][ha];
-                
-                nao_owners[iA] = new int[]{ a, ha};
+                nao_owners[iA] = new int[]{a, ha};
+
                 double daa = D_in_hybrid_basis.get(iA, iA);
 
-                // create a pseudo-edge (this is needed in order not to 'lose' the occ**2 of this orbital)
-                if (opt_Lewis_mode) {
-                    edges_new[k++] = new PairEdge(iA, nNAOs + iA,  daa*daa  );                    
-                }
-                
-                // create a pseudo-edge (this is needed in order not to 'lose' the occ**2 of this orbital)
-                //if (opt_Lewis_mode)
-                //    edges_new[k++] = new PairEdge(iA, nNAOs + iA,  daa*daa  );                
-                    //edges[k++] = new float[]{ iA, nNAOs + iA, (float)( daa*daa )  };
-                //else
-                  //  edges[k++] = new float[]{ iA, nNAOs + iA, (float)( 0.0 )  }; // this allows twice lower number of nodes!!! (TODO)
-                
-                
-                for (int b=0; b<nAtoms; b++) {
-                    if (b == a)
-                        continue; // we do not consider 'bonds' in which both orbitals belong to the same atom
-                    
-                    for (int hb=0; hb<hybridsOfAtoms[b].NAO_indices.length; hb++) {
-                        
+                if (opt_Lewis_mode)
+                    edges_new[k++] = new PairEdge(iA, nNAOs + iA, daa * daa);
+
+                for (int b = 0; b < nAtoms; b++) {
+                    if (b == a) continue;
+
+                    for (int hb = 0; hb < hybridsOfAtoms[b].NAO_indices.length; hb++) {
+
                         int iB = hybrAddresses[b][hb];
-                        if (iB > iA)
-                            continue; // avoid double-counting of the orbital pairs
-                        // note that all possible LPs have already been considered in a 'parent' loop
-                                               
+                        if (iB > iA) continue;
+
                         double dbb = D_in_hybrid_basis.get(iB, iB);
-                                                    
                         double dab = D_in_hybrid_basis.get(iA, iB);
-                        //double bd_occ = 0.5*( daa+dbb + Math.sqrt((daa-dbb)*(daa-dbb) + 4*dab*dab ) );
-                        //double nb_occ = daa+dbb - bd_occ;
-                        
-                        double bd_occ = 0.5*( daa+dbb + Math.sqrt((daa-dbb)*(daa-dbb) + 4*dab*dab ) );
-                        double nb_occ = daa+dbb - bd_occ;
-                        //boolean f = (2 * dab * dab > nb_occ*nb_occ) && (bd_occ > 1.0) &&                         
-                        boolean f = (bd_occ > 1.0) && (nb_occ < 1.0) && // seems to be the same as above
-                                Math.cos(Math.atan2(2*dab, Math.abs(daa-dbb))) < maxBondIonicityThreshold;
+
+                        double bd_occ = 0.5 * (daa + dbb +
+                                Math.sqrt((daa - dbb) * (daa - dbb) + 4 * dab * dab));
+                        double nb_occ = daa + dbb - bd_occ;
+
+                        boolean f = (bd_occ > 1.0) && (nb_occ < 1.0) &&
+                                Math.cos(Math.atan2(2 * dab, Math.abs(daa - dbb)))
+                                        < maxBondIonicityThreshold;
+
                         if (allowall || f) {
-                            if (opt_Lewis_mode) {
-                                edges_new[k++] = new PairEdge(iA, iB, bd_occ*bd_occ  );                                
-                                //edges[k++] = new float[]{ iA, iB, (float)(bd_occ*bd_occ)  };
-                            } else {
-                                edges_new[k++] = new PairEdge(iA, iB, dab*dab  );
-                                //edges_new[k++] = new PairEdge(iA, iB, daa*daa + 2*dab*dab + dbb*dbb  );
-                                //edges[k++] = new float[]{ iA, iB, (float)( dab*dab )  };
-                                //edges[k++] = new float[]{ iA, iB, (float)(daa*daa + 2*dab*dab + dbb*dbb)  };
-                            }
+                            edges_new[k++] = opt_Lewis_mode
+                                    ? new PairEdge(iA, iB, bd_occ * bd_occ)
+                                    : new PairEdge(iA, iB, dab * dab);
                         }
                     }
                 }
             }
         }
 
-        double result = 0.0; // the total weight of the found pairing
+        if (k == 0) return 0.0;
 
-        if (k==0)
-            return 0.0;  // Dloc is empty
-                
-        // decrease length of edges array
         PairEdge[] edges_new2 = new PairEdge[k];
         System.arraycopy(edges_new, 0, edges_new2, 0, k);
         edges_new = edges_new2;
-        
-        // find optimal hybrid pairing        
+
         Blossom x = new Blossom(edges_new);
-        //oldblossom x = new oldblossom(edges, false);        
         int[] remap = x.maxWeightMatching();
 
+        double result = 0.0;
+        int rowId = 1;
 
-        for (int i=0; i<remap.length ; i++) out.printf("%5d", i);
-        out.println();
-        for (int i=0; i<remap.length ; i++)  out.printf("%5d", remap[i]);
-        out.println();
+        // -------- Build CLPO table --------
+        for (int i = 0; i < remap.length && i < nNAOs; i++) {
 
-        
-        // save result
-        
-        
-        for (int i=0; i</*nNAOs*/remap.length && i < nNAOs; i++) {
             int j = remap[i];
+
             if (j >= nNAOs || j == -1) {
                 double occ = D_in_hybrid_basis.get(i, i);
-                if (do_print)
-                    out.printf("1C   subset: %7s (%5s), occ = %7.3f %n", 
-                            String.format("%s%d", Centers[nao_owners[i][0]].Name, nao_owners[i][0]+1),
-                            String.format("ho %d", nao_owners[i][1]+1),
-                            occ);
-                
-                result += occ*occ;
-                
+
+                int a = nao_owners[i][0];
+                int ha = nao_owners[i][1];
+
+                graphTable.add(String.format(
+                        "%4d (LP) %-26s %10.5f   1.0 * h%d@%s%d",
+                        rowId++,
+                        Centers[a].Name + (a + 1),
+                        occ,
+                        ha + 1,
+                        Centers[a].Name,
+                        a + 1
+                ));
+
+                result += occ * occ;
                 continue;
             }
-            if (i<j) { // note that j can be -1
+
+            if (i < j) {
                 double d11 = D_in_hybrid_basis.get(i, i);
                 double d12 = D_in_hybrid_basis.get(i, j);
                 double d22 = D_in_hybrid_basis.get(j, j);
-                
-                
-                // connect hybrids
 
-                int a  = nao_owners[i][0];
+                int a = nao_owners[i][0];
                 int ha = nao_owners[i][1];
-                int b  = nao_owners[j][0];
+                int b = nao_owners[j][0];
                 int hb = nao_owners[j][1];
-                
-                hybridsOfAtoms[a].friendAtomIndex[ha] = b; // need doing this only when assigning non-(-1) values !
+
+                hybridsOfAtoms[a].friendAtomIndex[ha] = b;
                 hybridsOfAtoms[a].friendHybridIndex[ha] = hb;
                 hybridsOfAtoms[b].friendAtomIndex[hb] = a;
                 hybridsOfAtoms[b].friendHybridIndex[hb] = ha;
-                
-                double bd_occ = 0.5*( d11+d22 + Math.sqrt((d11-d22)*(d11-d22) + 4*d12*d12 ) );
-                
-                if (opt_Lewis_mode)
-                    result += bd_occ*bd_occ;
-                else
-                    result += d11*d11 + 2*d12*d12 + d22*d22;
 
-                if (do_print)                    
-                    out.printf("  2C subset: %7s (%5s) -- %7s (%5s), "+
-                            "d11 = \t %.3f \t d12 = \t%7.3f \t d22 = \t %.3f \t Io = %.3f \t bd_occ = %.3f \t nb_occ = \t %.3f %n",
-                            String.format("%s%d", Centers[nao_owners[i][0]].Name, nao_owners[i][0]+1),
-                            String.format("h%d", nao_owners[i][1]+1),                        
-                            String.format("%s%d", Centers[nao_owners[j][0]].Name, nao_owners[j][0]+1),
-                            String.format("h%d", nao_owners[j][1]+1),
-                            d11, d12, d22, 
-                            Math.cos(Math.atan2(2*d12, Math.abs(d11-d22)) ),
-                            bd_occ,
-                            d11+d22 - bd_occ );
-                
+                double bd_occ = 0.5 * (d11 + d22 +
+                        Math.sqrt((d11 - d22) * (d11 - d22) + 4 * d12 * d12));
+                double nb_occ = d11 + d22 - bd_occ;
+
+                double io = Math.cos(Math.atan2(2 * d12, Math.abs(d11 - d22)));
+                double theta = 0.5 * Math.atan2(2 * d12, d11 - d22);
+
+                double c = Math.cos(theta);
+                double s = Math.sin(theta);
+
+                String atomA = Centers[a].Name + (a + 1);
+                String atomB = Centers[b].Name + (b + 1);
+
+                graphTable.add(String.format(
+                        "%4d (BD) %-26s %10.5f   h%d@%s * (%7.4f) + h%d@%s * (%7.4f)",
+                        rowId++,
+                        atomA + "-" + atomB + String.format(", Io = %.4f", io),
+                        bd_occ,
+                        ha + 1, atomA,  c,
+                        hb + 1, atomB, -s
+                ));
+
+                graphTable.add(String.format(
+                        "%4d     %-26s %10.5f   h%d@%s * (%7.4f) + h%d@%s * (%7.4f)",
+                        rowId++,
+                        atomA + "-" + atomB + ", antibonding (NB)",
+                        nb_occ,
+                        ha + 1, atomA, -s,
+                        hb + 1, atomB, -c
+                ));
+
+                result += opt_Lewis_mode
+                        ? bd_occ * bd_occ
+                        : d11 * d11 + 2 * d12 * d12 + d22 * d22;
             }
         }
-        
+
+        // -------- Write table to file --------
+        try (PrintWriter pw = new PrintWriter(new FileWriter("graph"))) {
+            for (String line : graphTable)
+                pw.println(line);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         return result;
-    
     }
+
     //--------------------------------------------------------------------------
     /**
      * Creates a set of localized one-/two-center orbitals using the 
@@ -1480,7 +1488,7 @@ public class PropertyOptimizedOrbitals {
         // print results
 
         out.printf("There are %d molecule(s) in the system%n", currentFragmentId);
-        out.println("(the 'molecule' is defined as the set of atoms linked with BD orbitals)");        
+        out.println("(the 'molecule' is defined as the set of atoms linked with BD orbitals)");
         
         double[] framgentCharges = new double[currentFragmentId];
         int[] nAtomsInMol = new int[currentFragmentId];
