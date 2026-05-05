@@ -154,7 +154,7 @@ def generate_molden(mol:QuantumChemistryBase,filename:str=None,output_dir:str=No
             print('    Found l=5 in basis.')
             molden.from_mo(pfmol, f'{output_dir}/{filename}.molden', mo_coeff,ene=mo_energy,occ=mo_occ,ignore_h=True)
 
-def generate_CLPO_molecule_edges(mol:QuantumChemistryBase, output_dir:str=None, thres:Number=1.e-12, silent:bool=True, use_active:bool=True, rm_files:bool=True, **kwargs)->Tuple[QuantumChemistryBase,list]:
+def generate_CLPO_molecule_edges(mol:QuantumChemistryBase, edges:list[tuple[int]] = None, output_dir:str=None, thres:Number=1.e-12, silent:bool=True, use_active:bool=True, rm_files:bool=True, **kwargs)->Tuple[QuantumChemistryBase,list]:
     '''
     Temporal function for generating a molecule with CLPO orbitals (10.1002/qua.25798) until integrated in Sunrise molecules
     
@@ -175,7 +175,11 @@ def generate_CLPO_molecule_edges(mol:QuantumChemistryBase, output_dir:str=None, 
     generate_molden(mol=mol,filename=filename,output_dir=output_dir,use_active=False,**kwargs) #TODO: Janpa CLPO is bug for active space only, working on 
     call_molden2aim(moldenfile=filename+'.molden',output_dir=output_dir)
     call_molden2molden(command=f'-NormalizeBF -cart2pure  -i {filename}.molden -o {filename}.molden',silent=True)
-    call_janpa(command=f'-i {filename}.molden -CLPO_Molden_File {filename}_CLPO.molden -HybrOptOccConvThresh {thres}',silent=silent)
+    c = f'-i {filename}.molden -CLPO_Molden_File {filename}_CLPO.molden -HybrOptOccConvThresh {thres} '
+    if edges is not None:
+        edges = [tuple([e for e in edge]) for edge in edges]
+        c += f' -edges {edges}'
+    call_janpa(command=c,silent=silent)
     mo_matrix = read_molden_mo_matrix(f"{filename}_CLPO.molden")
     if rm_files:
         subprocess.call(f'rm {output_dir}/m2a.ini',shell=True)
@@ -232,7 +236,7 @@ def generate_HAO_molecule(mol:QuantumChemistryBase, output_dir:str=None, thres:N
     else: mol = nmol
     return mol
 
-def call_janpa(command: str = '', folder_x: str = None, output_dir=None, silent=False):
+def call_janpa(command: str = '', output_dir=None, silent=False):
     """
     Wrapper for the janpa executable files.
     command: str Command string as it would be introduced on the terminal.
@@ -253,16 +257,20 @@ def call_janpa(command: str = '', folder_x: str = None, output_dir=None, silent=
             
     # 2. Construct the Java command. 
     cmd = ['java', '-jar', str(jar_path)]
-    
     # 3. Append the specific command arguments
-    if command:
+    if len(command):
+        e = None
+        if '-edges' in command:
+            idx = command.index('-edges ')
+            odx = command.index('[',idx)
+            cdx = command.index(']',odx)+1
+            e = command[odx:cdx]
+            command = command[:idx]+command[cdx:]
         extra_args = shlex.split(command)
+        if e is not None:
+            extra_args += ['-edges']
+            extra_args += [f'{e}']
         cmd.extend(extra_args)
-        
-    # 4. Append your input folder X to the command arguments
-    if folder_x:
-        cmd.append(os.path.abspath(folder_x))
-
     # 5. Run the subprocess
     try:
         res = subprocess.run(
@@ -440,18 +448,35 @@ if __name__ == '__main__':
     # H	-2.1393290	1.2351420	0.0000000
     # Cu  0.00000000  0.0000000   1.8000000 '''
     # geometry = 'Cu 0. 0. 0. '
-    geometry = 'H 0. 0. 0. \n H 0. 0. 1. \n H 0. 0. 2. \n H 0. 0. 3.'
+    geometry = '''
+    C 0.00000 0.00000 0.00000
+    C 1.48460 0.00000 0.00000
+    C -0.76837 0.00000 -1.12008
+    C 2.25297 0.00000 -1.12008
+    H -0.47297 -0.00038 0.97971
+    H 1.95470 -0.00556 0.97953
+    H -1.85042 -0.00018 -1.03002
+    H -0.35993 -0.00000 -2.12298
+    H 3.33365 -0.01193 -1.02751
+    H 1.85521 0.00845 -2.12564'''
+    # geometry = 'H 0. 0. 0. \n H 0. 0. 1. \n H 0. 0. 2. \n H 0. 0. 3.\n H 0. 0. 4.\n H 0. 0. 5.'
+
     mol = sun.Molecule(geometry=geometry, basis_set='sto-3g', backend='pyscf')
     # sun.plot_MO(mol,'HF')
     print('Total Ne',mol.parameters.total_n_electrons)
     print('Active Ne ',mol.n_electrons)
-    print('Core Ne',mol.parameters.get_number_of_core_electrons())
-    print('Total Norb ',len(mol.integral_manager.orbitals))
-    print('Active Norb',mol.n_orbitals)
+    # print('Core Ne',mol.parameters.get_number_of_core_electrons())
+    # print('Total Norb ',len(mol.integral_manager.orbitals))
+    # print('Active Norb',mol.n_orbitals)
     print("Core Norb",len([i.idx_total for i in mol.integral_manager.orbitals  if i.idx is None]))
-    mol1,edges = generate_CLPO_molecule_edges(mol,rm_files=False,silent=True)
+    mol2 =  generate_HAO_molecule(mol,rm_files=True,silent=True,use_active=False)
+    # sun.plot_MO(mol2,'HA0')
+    # exit()
+    print("HAO Done")
+    mol1,edges = generate_CLPO_molecule_edges(mol, edges=[(3,8),(13,18)], rm_files = False, silent = True, use_active = True)
+    sun.plot_MO(mol1,'CLPO')
+    # d = {o.idx:o.idx_total for o in mol.integral_manager.orbitals}
+    # sun.plot_MO(mol1,'CLPO',orbital=[d[e] for e in [6,10,14,18]])
     print('edges ',edges)
     print("Ne Edges",2*len(edges))
-    print("CLPO DONE")
-    # mol2 =  generate_HAO_molecule(mol,rm_files=True,silent=True)
-    # print("HAO Done")
+    print("CLPO DONE") #[(6,10),(14,18)]

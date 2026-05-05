@@ -11,6 +11,6 @@ public class PairEdge {
     }
     @Override
     public String toString() {
-        return String.format("PairEdge(a=%d, b=%d, wt=%.2f)", a, b, wt);
+        return String.format("PairEdge(a=%d, b=%d, wt=%.2f)", this.a, this.b, this.wt);
     }
 }

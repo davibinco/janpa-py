@@ -11,6 +11,7 @@ bin/
 *.molden
 *.ini
 *.jar
+*.cube
 
 # Ejecutables o carpetas específicas
 graph

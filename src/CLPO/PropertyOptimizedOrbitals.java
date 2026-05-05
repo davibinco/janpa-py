@@ -343,6 +343,80 @@ public class PropertyOptimizedOrbitals {
             return grad_DNLO_occ2(a, pwin); // Lewis mode 
     }
     //--------------------------------------------------------------------------
+    //--------------------------------------------------------------------------
+    /**
+     * Extract edge list from a string formated as: -edges = [(0,),(0,1),(2,3)]
+     *
+     * @param input The string given by the user
+     * @return List of edges
+     * @throws IllegalArgumentException whether the input doesn't contain the proper brakets or wrong edges length/content
+     */
+    public static List<int[]> parseEdges(String input) {
+        List<int[]> edges = new ArrayList<>();
+
+        int startIndex = input.indexOf('[');
+        int endIndex = input.indexOf(']');
+
+        if (startIndex == -1 || endIndex == -1 || startIndex >= endIndex) {
+            throw new IllegalArgumentException("Wasn't  found a valid list delimited by the brakets '[...]' on the input.");
+        }
+
+        String content = input.substring(startIndex + 1, endIndex);
+
+        // Look for everything into parenthesis ( )
+        Pattern pattern = Pattern.compile("\\(([^)]*)\\)");
+        Matcher matcher = pattern.matcher(content);
+
+        while (matcher.find()) {
+            // 1. Extract and clean outer spaces
+            String cedge = matcher.group(1).trim();
+
+            if (cedge.isEmpty()) {
+                throw new IllegalArgumentException("Empty edge found '()', not allowed.");
+            }
+
+            // 2. For PYTHON: If the turple ends with coma (i.e. "1,") remove it.
+            if (cedge.endsWith(",")) {
+                cedge = cedge.substring(0, cedge.length() - 1).trim();
+            }
+
+            // 3. Split the content by the remaining comas
+            String[] parts = cedge.split(",");
+
+            try {
+                if (parts.length == 1) {
+                    // Case (A,)
+                    int node = Integer.parseInt(parts[0].trim());
+                    edges.add(new int[]{node, node});
+
+                } else if (parts.length == 2) {
+                    // Case (A, B)
+                    int origin = Integer.parseInt(parts[0].trim());
+                    int destiny = Integer.parseInt(parts[1].trim());
+                    edges.add(new int[]{origin, destiny});
+
+                } else {
+                    // Lenght 3 or more
+                    throw new IllegalArgumentException(
+                            "Edge with invalid length (" + parts.length + " elements). Only 1 or 2 allowed. Found: (" + matcher.group(1) + ")"
+                    );
+                }
+            } catch (NumberFormatException e) {
+                // Cases were not numbers: ej. (1, A)
+                throw new IllegalArgumentException("Not numerical value found on the edge: (" + matcher.group(1) + ")");
+            }
+        }
+
+        return edges;
+    }
+
+    public boolean containsEdge(List<int[]> list, int a, int b) {
+        for (int[] e : list) {
+            if ((e[0] == a && e[1] == b) || (e[0] == b && e[1] == a)) return true;
+        }
+        return false;
+    }
+    //--------------------------------------------------------------------------
     private int optimizeHybrids_nItersDone = -1;
     /**
      * The key procedure of DNLO which optimizes the hybrids
@@ -836,7 +910,6 @@ public class PropertyOptimizedOrbitals {
     {
         double maxBondIonicityThreshold = options.maxClpoBondIonicityThreshold.get_double();
 
-        out.println("Finding an optimal hybrid pairing...");
         boolean do_print = false;
 
         int[][] nao_owners = new int[nNAOs][];
@@ -850,6 +923,15 @@ public class PropertyOptimizedOrbitals {
         int nEdgesMax = nNAOs * (2 * nNAOs - 1) / 2;
         if (opt_Lewis_mode)
             nEdgesMax += nNAOs;
+        boolean custom = false;
+        List<int[]> custom_edges = new ArrayList<>();
+        if (!options.Edges.get_String().isEmpty()){
+            custom_edges = parseEdges(options.Edges.get_String());
+            custom = true;
+            if (custom_edges.size() > nEdgesMax){
+                throw new IllegalArgumentException("More edges than expected provided, provided: "+custom_edges.size()+", expected: "+nEdgesMax);
+            }
+        }
 
         PairEdge[] edges_new = new PairEdge[nEdgesMax];
         int k = 0;
@@ -866,9 +948,15 @@ public class PropertyOptimizedOrbitals {
 
                 double daa = D_in_hybrid_basis.get(iA, iA);
 
-                if (opt_Lewis_mode)
-                    edges_new[k++] = new PairEdge(iA, nNAOs + iA, daa * daa);
-
+                boolean nadded = true;
+                if (custom){
+                    boolean f = containsEdge(custom_edges,iA,iA);
+                    if (f){
+                        edges_new[k++] = new PairEdge(iA,nNAOs + iA,1000);
+                        nadded = false;
+                    }
+                }
+                if (nadded && opt_Lewis_mode) edges_new[k++] = new PairEdge(iA, nNAOs + iA, daa * daa);
                 for (int b = 0; b < nAtoms; b++) {
                     if (b == a) continue;
 
@@ -876,6 +964,15 @@ public class PropertyOptimizedOrbitals {
 
                         int iB = hybrAddresses[b][hb];
                         if (iB > iA) continue;
+                        if (custom){
+                            boolean f = containsEdge(custom_edges,iA,iB);
+                            if (f){
+                                // This works, the particular weight doesn't matter the weight too much as far as it is
+                                // bigger than the others edges (and doesn't maxnumber bcs overflow)
+                                edges_new[k++] = new PairEdge(iB, iA,1000 );
+                                continue;
+                            }
+                        }
 
                         double dbb = D_in_hybrid_basis.get(iB, iB);
                         double dab = D_in_hybrid_basis.get(iA, iB);
@@ -898,6 +995,9 @@ public class PropertyOptimizedOrbitals {
             }
         }
 
+//        for (int i = 0; i < edges_new.length ; i++){
+//            if (edges_new[i] != null) out.println(i + "--" +edges_new[i].toString());
+//        }
         if (k == 0) return 0.0;
 
         PairEdge[] edges_new2 = new PairEdge[k];
@@ -1228,10 +1328,10 @@ public class PropertyOptimizedOrbitals {
         
         out.println();
         out.printf(">> %s occupancy summary >>%n", loNameStr);
-        out.printf("       bonding (BD): %12.5f in %4d oribtals%n", BD_sum, num_bd);
-        out.printf("  anti-bonding (NB): %12.5f in %4d oribtals%n", NB_sum, num_bd);
-        out.printf(" 1c-lone pairs (LP): %12.5f in %4d oribtals%n", LP_sum, num_lp);
-        out.printf(" 1c-unoccupied (RY): %12.5f in %4d oribtals%n", RY_sum, num_ry);        
+        out.printf("       bonding (BD): %12.5f in %4d orbitals%n", BD_sum, num_bd);
+        out.printf("  anti-bonding (NB): %12.5f in %4d orbitals%n", NB_sum, num_bd);
+        out.printf(" 1c-lone pairs (LP): %12.5f in %4d orbitals%n", LP_sum, num_lp);
+        out.printf(" 1c-unoccupied (RY): %12.5f in %4d orbitals%n", RY_sum, num_ry);
         out.println();
 
         out.printf("Method        BD+LP....in      NB+RY     BD+NB+LP  BD+NB+LP+RY      trace(D)   Sum[Bd^2+Lp^2]    ||D||^2%n");
