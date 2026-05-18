@@ -561,8 +561,8 @@ public class NPA {
 
         _sliding_indexes = null;
         /* Ready.
-         * It is almost for sure that at the first use of this transofrmation
-         * (when Initial basis coinsides with atomic basis set functions)
+         * It is almost for sure that at the first use of this transformation
+         * (when Initial basis coincides with atomic basis set functions)
          * SortedBasisFunctions will contain 0,1,2,3,4,5,....,Basis.length-1.
          * However, in subsequent calls it is expected to be quite different
          */
@@ -599,7 +599,7 @@ public class NPA {
                 NBasisFunctionsUsedForThisL = 0;
                 for (int i=FirstSortedBasisFunctionOfAtom[cntr]; i<(FirstSortedBasisFunctionOfAtom[cntr]+BasisFunctionsPerAtom[cntr]); i++)
                     if (InitialBasis[ SortedBasisFunctions[i] ].L == L) {
-                        // A desired basis funciton has been found!
+                        // A desired basis function has been found!
                         // Have we already met the radial part of this basis function?
                         was_found = false;
                         RID = InitialBasis[ SortedBasisFunctions[i] ].RadialPart_ID;
@@ -609,7 +609,7 @@ public class NPA {
                             RadialPartsUsedForThisL[NRadialPartsUsedForThisL] = RID;
                             NRadialPartsUsedForThisL++;
                         }
-                        // simmilar for BasisFunctionsUsedForThisL
+                        // similar for BasisFunctionsUsedForThisL
                         was_found = false;
                         for (int j=0; (!was_found)&&(j<NBasisFunctionsUsedForThisL); j++)
                             was_found |= (BasisFunctionsUsedForThisL[j] == SortedBasisFunctions[i]);
@@ -654,7 +654,7 @@ public class NPA {
                             Local_S[RIndex1][RIndex2] /= NFns;
                             Local_SDS[RIndex1][RIndex2] /= NFns;
                         }
-                        // if InitialBasis coicides with atomic basis set, NFns will be equal to 2L+1
+                        // if InitialBasis coincides with atomic basis set, NFns will be equal to 2L+1
                         Local_S[RIndex2][RIndex1] = Local_S[RIndex1][RIndex2];
                         Local_SDS[RIndex2][RIndex1] = Local_SDS[RIndex1][RIndex2];
                     }
@@ -677,7 +677,7 @@ public class NPA {
                  * find mutually normalized radial parts.
                  * The most logical way for this is to construct overlap matrix for radial directly, i.e.,
                  *
-                 * // Create overlap (sub-)matrix for radial parts used to cunstruct PNAOs
+                 * // Create overlap (sub-)matrix for radial parts used to construct PNAOs
                  * double[][] local_radial_S = new double[NRadialPartsUsedForThisL][NRadialPartsUsedForThisL];
                  * for (int i=0; i<NRadialPartsUsedForThisL; i++)
                  *     for (int j=i; j<NRadialPartsUsedForThisL; j++) {
@@ -995,14 +995,14 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
                     strted_PNAOs[pnao+1] = tmp;
             }
         }
-        
+
         //----------------------------------------------------------------------
         //
         // Split PNAOs into two sets: Natural Minimal Basis (NMB) and Natural Rydberg Basis (NRB)
         //
         //----------------------------------------------------------------------
         out.printf("%nSTEP 2. Split PNAOs into NMB / NRB sets%n%n");
-        
+
         // Label eacha of those weight-sorted PNAOs as "NMB" or "NRB"
         // Use NMB_per_Atom array in that process
         out.println(" Number of basis functions in the Natural Minimal Basis (NMB) set for each center: ");
@@ -1025,7 +1025,7 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
                     int nmb_LZ = 0;
                     if (Z > 0) // 13.Jan.2019: a work-around for Ghost atoms (which have Z==0 in molden files)
                         nmb_LZ = NMB_per_Atom[ PNAOs[strted_PNAOs[i]].L ][Z-1];
-                    if (functions_used[ PNAOs[strted_PNAOs[i]].L ] > nmb_LZ )
+                    if (functions_used[ PNAOs[strted_PNAOs[i]].L ] > nmb_LZ || ( PNAOs[i].weight < 1.e-7 ) ) // work around to avoid empty orbitals in NMB
                         PNAOs[strted_PNAOs[i]].NRB = true;
                 }
 
@@ -1034,7 +1034,7 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
             for (int i=0; i<PNAOs.length; i++)
                 if (( PNAOs[i].Center_ID == (cntr+1) ) && (!PNAOs[i].NRB))
                     functions_used[ PNAOs[i].L ] ++;
-            
+
             // print NMB summary
             out.printf("center %3d: ",cntr+1);
             for (int L=0; L<LMX; L++)
@@ -1088,33 +1088,33 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
                 }
         } // end local block
 
-        //----------------------------------------------------------------------
+            //----------------------------------------------------------------------
         //
         // Create the Overlap and S.D.S matrices in PNAO basis
         //
         //----------------------------------------------------------------------
         if (verbose_print)
             out.println("Transforming overlap and SDS matrices to PNAO basis...");
-        
+
         // Get AO -> PNAO transformation coefficients:
         // PNAO[i] = PNAO_to_AO[i][j]_sum(j)_AO[j]
         Matrix PNAO_to_AO_Matrix = BasisFunctionsToMatrix(PNAOs, false);
 
 
         // Create user-readable labels of PNAOs: includes PNAO_cntr_IDs, PNAO_RadialPart_GlobalIDs, L and m
-        PNAO_Labels = Create_NAO_Labels(PNAOs);  
+        PNAO_Labels = Create_NAO_Labels(PNAOs);
 
         // Transform AO overlap matrix to the PNAO basis:
         // (PNAO_mu, PNAO_nu) = SUM(i,k)( c[mu][i]·c[nu][k]·S[i,k] ) = (c.S.c^T)[mu,nu], where c[][] is PNAO_to_AO array
         PNAO_Overlap_Matrix = ee.TransformMatrixToNewBasis(OverlapMatrix, PNAO_to_AO_Matrix, true);//  (PNAO_to_AO_Matrix.times(OverlapMatrix)).times(PNAO_to_AO_Matrix.transpose());
-        //        
+        //
 
         //debug
 
         // Print that matrix
         printout.Print_Matrix(PNAO_Overlap_Matrix, "PNAO overlap matrix:",
                 PNAO_Labels, PNAO_Labels, options.PNAO_OverlapMatrix_File.get_String());
-        
+
         out.printf("Trace of the PNAO overlap matrix: %.7f (should be equal to %d, the total number of PNAOs)\n",
                 PNAO_Overlap_Matrix.trace(), PNAOs.length);
 
@@ -1124,7 +1124,7 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
 
         printout.Print_Matrix(SDS_PNAO, "The S.D.S matrix in PNAO basis:",
                 PNAO_Labels, PNAO_Labels, options.PNAO_SDS_Matrix_File.get_String());
-        
+
 
 
 
@@ -1168,11 +1168,11 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
                 PNAOs[original_NMB_numbers[i]].RadialPart_ID+1,
                     "spdfg".charAt(PNAOs[original_NMB_numbers[i]].L), PNAOs[original_NMB_numbers[i]].m);
 
-        printout.Print_Matrix(NMB_Overlap_Matrix, "NMB_old overlap:", NMB_Labels, NMB_Labels, 
+        printout.Print_Matrix(NMB_Overlap_Matrix, "NMB_old overlap:", NMB_Labels, NMB_Labels,
                 options.NMB_old_Overlap_Matrix_File.get_String());
-        printout.Print_Matrix(NMB_SDS_Matrix, "NMB_old SDS:", NMB_Labels, NMB_Labels, 
+        printout.Print_Matrix(NMB_SDS_Matrix, "NMB_old SDS:", NMB_Labels, NMB_Labels,
                 options.NMB_old_SDS_Matrix_File.get_String());
-        
+
 
         // Create W.S.W^T matrix
         // due to floating-point 'features' it is better NOT to use Matrix.times method to avoid a slightly-non-symmetric result
@@ -1198,7 +1198,7 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
 
         // Do a W-orthogonalization step:
         // create OW = W(WSW)^(-1/2), where S is PNAO overlap matrix
-        // Begin with (WSW)^(-1/2):        
+        // Begin with (WSW)^(-1/2):
         WSW_NMB = ee.Matrix_minus05(WSW_NMB);
         //Now do: Matrix OW_NMB = W_NMB.times(Matrix_minus05(WSW_NMB)); => OW_NMB = W_NMB.WSW_NMB^(-1/2);
         // OW_NMB[i,j] = W_NMB[i,k].WSW_NMB^(-1/2)[k,j] = W_NMB[i,i].WSW_NMB^(-1/2)[i,j]
@@ -1210,9 +1210,9 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
                 //In fact we are doing something like: OW_NMB.set(i,j, w_i * WSW_NMB.get(i,j));
                 OW1.set(original_NMB_numbers[i], original_NMB_numbers[j], w_j * WSW_NMB.get(j, i));
         }
-        
-        /*      
-        // create diagonal matrix of weights        
+
+        /*
+        // create diagonal matrix of weights
         Matrix W_NMB = new Matrix(N_NMB, N_NMB, 0.0);
         minWeight = 2.0;
         for (int i=0; i<N_NMB; i++) {
@@ -1228,19 +1228,19 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
         // coefficients for NRB -> PNAO (unitary sub matrix)
          */
 
-        // Use OW1 to transform SDS and Overlap matrices into (NRB + updated-NMB) basis              
+        // Use OW1 to transform SDS and Overlap matrices into (NRB + updated-NMB) basis
         Matrix Overlap_new = ee.TransformMatrixToNewBasis(PNAO_Overlap_Matrix, OW1, true); // OW1.times(PNAO_Overlap_Matrix).times(OW1.transpose());
         Matrix SDS_new = ee.TransformMatrixToNewBasis(SDS_PNAO, OW1, true); //OW1.times(SDS_PNAO).times(OW1.transpose());
 
 
         /*
-        fortPrint.PrintMatrixSimple(Overlap_new,"Overlap_new","aaa",null,null);                     
+        fortPrint.PrintMatrixSimple(Overlap_new,"Overlap_new","aaa",null,null);
         out.println("Overlap_new");
         Overlap_new.getMatrix(ordr, ordr).print(13, 7);
         this.options.dont_print_matrices = false;
         this.PrintMatrix(Overlap_new, "Overlap_new", null);
         this.PrintMatrix(SDS_new, "SDS_new", null);
-         * 
+         *
          */
 
         //debug
@@ -1615,7 +1615,7 @@ g    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 
 
         // Create corresponding transformation matrix
         Matrix BF_new_2_NAO = BasisFunctionsToMatrix(NAO, false);
-        
+
         // Create the PNAO->NAO transformation matrix
         Matrix NAO_2_PNAO = BF_new_2_NAO.times(OW2).times(ON2).times(OS1).times(OW1);
         // Create the NAO<-AO basis functions transformation matrix

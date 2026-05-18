@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="JANPA" type="JarApplication">
+  <configuration default="false" name="JANPA" type="JarApplication" singleton="false">
     <option name="JAR_PATH" value="$PROJECT_DIR$/janpa.jar" />
-    <option name="PROGRAM_PARAMETERS" value="-i h4.molden -CLPO_Molden_File h4_CLPO.molden -HybrOptOccConvThresh 1.e-12 -edges [(0,3),(1,2),(4,5)]" />
+    <option name="PROGRAM_PARAMETERS" value="-i li.molden -AHO_Molden_File li_HAO.molden -HybrOptOccConvThresh 1.e-12" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
     <option name="ALTERNATIVE_JRE_PATH" />
     <module name="janpa" />

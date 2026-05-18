@@ -16,6 +16,7 @@ bin/
 # Ejecutables o carpetas específicas
 graph
 JANPA_linux
+JANPA_macos
 molden2molden_linux
 
 # Si quieres ser muy específico con subcarpetas en cualquier nivel:
