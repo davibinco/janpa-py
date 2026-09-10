@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "janpa"
+version = "0.1.0"
+description = "Python rewrite of JANPA: Natural Population Analysis and electronic structure tools"
+# Pointing to the parent directory's README. 
+# (Alternatively, you can move README.md into janpa-py/ and change this to "README.md")
+readme = "/README.md" 
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "JANPA contributors"},
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "networkx>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff",
+    "pyscf>=2.4",  # Added for test fixtures
+]
+pyscf = [
+    "pyscf>=2.4",
+]
+
+[project.scripts]
+janpa = "janpa.cli.main:main"
+molden2molden = "janpa.cli.molden2molden:main"
+nwchem2molden = "janpa.cli.nwchem2molden:main"
+
+[tool.setuptools.packages.find]
+# CRITICAL: Tells setuptools that the 'janpa' package is inside the 'src' folder
+where = ["src"]
+include = ["janpa*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

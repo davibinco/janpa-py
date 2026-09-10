@@ -1,8 +1,0 @@
-<component name="ArtifactManager">
-  <artifact type="jar" name="nwchem2molden:jar">
-    <output-path>$PROJECT_DIR$/out/artifacts/nwchem2molden_jar</output-path>
-    <root id="archive" name="JANPA.jar">
-      <element id="module-output" name="JANPA" />
-    </root>
-  </artifact>
-</component>
