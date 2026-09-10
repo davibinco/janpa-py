@@ -505,13 +505,6 @@ class PropertyOptimizedOrbitals:
                 row_id += 1
                 
                 result += bd_occ * bd_occ if self.opt_lewis_mode else d11 * d11 + 2 * d12 * d12 + d22 * d22
-
-        try:
-            with open("graph", "w") as pw:
-                for line in graph_table:
-                    pw.write(line + "\n")
-        except Exception as e:
-            print(e)
             
         return result
 
