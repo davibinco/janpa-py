@@ -1,15 +1,13 @@
-# janpa-py: Pure Python Natural Population Analysis
+# janpa-py
 
-A fast, dependency-free Python port of [JANPA](https://janpa.sourceforge.net/) (Natural Population Analysis and electronic structure tools). This library provides native Python implementations of the 7-step NPA algorithm, Atomic Hybrid Orbitals (AHO/LHO), and Chemist's Localized Property-optimized Orbitals (CLPO/LPO) using `numpy` and `scipy`, completely eliminating the need for Java binaries, subprocess wrappers, or temporary disk I/O.
-
-This repository contains the Python conversion of our modified Java code for JANPA. See the `janpa-java` branch for the Java code, and refer to the [original JANPA project](https://janpa.sourceforge.net/) for the foundational work.
+A fast, pure-Python port of [JANPA](https://janpa.sourceforge.net/) for Natural Population Analysis (NPA) and localized orbitals (CLPO/AHO). This library provides native Python implementations of the 7-step NPA algorithm and Chemist's Localized Property-optimized Orbitals (CLPO) using `numpy` and `scipy`, completely eliminating the need for Java binaries or temporary disk I/O.
 
 ## Key Features
 
-- **Pure Python:** Built entirely on `numpy`, `scipy`, and `networkx`.
+- **Pure Python:** Built entirely on standard scientific Python libraries.
 - **In-Memory Execution:** No messy `.molden` or `graph` text files left on your hard drive.
-- **Seamless Integration:** Designed as a drop-in replacement for PySCF and Tequila/Sunrise workflows.
-- **Custom Graphs:** Supports both automatic bonding graph extraction and custom edge definitions for quantum ansatz generation (e.g., HCB-SPA).
+- **Seamless PySCF Integration:** Designed to work directly with PySCF molecule objects and mean-field results.
+- **Chemical Graph Extraction:** Automatically extracts bonding graphs (edges) from the CLPO density matrix for downstream quantum chemistry workflows.
 
 ## Installation
 
@@ -19,27 +17,28 @@ Clone the repository and install it into your Python environment:
     cd janpa
     pip install .
 
-## Quick Usage
+## Quick Start with PySCF
 
-Here is a minimal example demonstrating how to run NPA and CLPO analysis directly in memory using PySCF:
+Here is a minimal example demonstrating how to run NPA, generate CLPO orbitals, and extract the chemical bonding graph directly in memory using PySCF and the `janpa_interface` module:
 
     import numpy as np
     from pyscf import gto, scf
-    from janpa.io.molden import MoldenFile
-    from janpa.npa.npa import run_npa
-    from janpa.clpo.lpo import create_clpos, CLPOOptions
-    
+    from janpa.janpa_interface import generate_CLPO_molecule_edges
+
     # 1. Build molecule and run SCF
     mol = gto.M(atom="H 0 0 0; H 0 0 1", basis="sto-3g", unit="Angstrom")
     mf = scf.RHF(mol).run()
-    
-    # 2. Pass the molecule to the JANPA pipeline
-    # (See the Tequila/Sunrise integration scripts in the examples folder 
-    # for full active-space and custom-edge workflows)
 
-## Tequila / Sunrise Integration
+    # 2. Generate CLPO orbitals and extract the bonding graph
+    # silent=True suppresses the verbose JANPA terminal output
+    clpo_coeff, edges = generate_CLPO_molecule_edges(mol, mf, silent=True)
 
-This library acts as a direct replacement for the Java-based `sunrise.CLPO` module. It exposes `generate_CLPO_molecule_edges` and `generate_HAO_molecule` to flawlessly map localized orbitals into frozen-core active spaces, allowing you to feed chemical bonding graphs directly into quantum computing ansatze.
+    print("CLPO Coefficient matrix shape:", clpo_coeff.shape)
+    print("Extracted CLPO Edges:", edges)
+
+The `edges` list contains tuples representing the localized orbital pairs:
+- `(i,)` represents a Lone Pair (LP) on a single center.
+- `(i, i+1)` represents a Bonding (BD) and Antibonding (NB) pair between two centers.
 
 ## References and Attribution
 
@@ -49,7 +48,3 @@ If you use this software or the underlying methods in your research, please cite
 
 1. T. Yu. Nikolaienko, L. A. Bulavin; *Localized orbitals for optimal decomposition of molecular properties*, Int. J. Quantum Chem. (2019), Vol.119, page e25798. [DOI: 10.1002/qua.25798](https://doi.org/10.1002/qua.25798)
 2. T. Yu. Nikolaienko, L. A. Bulavin, D. M. Hovorun; *JANPA: an open source cross-platform implementation of the Natural Population Analysis on the Java platform*, Comput. Theor. Chem. (2014), V.1050, P.15-22. [DOI: 10.1016/j.comptc.2014.10.002](https://doi.org/10.1016/j.comptc.2014.10.002)
-
-## License
-
-This Python port is released under the MIT License. The original JANPA Java software is subject to its own licensing and copyright as detailed on the original project's website.
