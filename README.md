@@ -13,8 +13,8 @@ A fast, pure-Python port of [JANPA](https://janpa.sourceforge.net/) for Natural 
 
 Clone the repository and install it into your Python environment:
 
-    git clone https://github.com/yourusername/janpa.git
-    cd janpa
+    git clone https://github.com/davibinco/janpa-py.git
+    cd janpa-py
     pip install .
 
 ## Quick Start with PySCF

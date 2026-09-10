@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Python rewrite of JANPA: Natural Population Analysis and electronic structure tools"
 # Pointing to the parent directory's README. 
 # (Alternatively, you can move README.md into janpa-py/ and change this to "README.md")
-readme = "/README.md" 
+readme = "README.md" 
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
