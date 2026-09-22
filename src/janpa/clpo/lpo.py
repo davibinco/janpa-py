@@ -721,6 +721,24 @@ class PropertyOptimizedOrbitals:
         self.iterative_hybrid_opt(hybr2i_h, False, "CLPO")
         
         hybr2i_h = self.get_global_hybrid_indices()
+        # Equivalent bonds of one atom (same partner element and bond length, e.g. the two Be-H bonds of BeH2) leave
+        # the optimization in a slot order decided by numerical noise, and the slots decide the LO order. Keep each
+        # set of equivalent bonds in partner-atom order, so the LOs (and every index into them) do not depend on it.
+        for a, h in enumerate(self.hybrids_of_atoms):
+            bonds = [i for i in range(h.n_valid_hybrids) if h.friend_atom_index[i] != -1]
+            while bonds:
+                b0 = self.centers[h.friend_atom_index[bonds[0]]]
+                slots = [i for i in bonds if self.centers[h.friend_atom_index[i]].z == b0.z and
+                         abs(self.centers[a].distance_to(self.centers[h.friend_atom_index[i]].r0) - self.centers[a].distance_to(b0.r0)) < 1e-6]
+                bonds = [i for i in bonds if i not in slots]
+                order = sorted(slots, key=lambda i: h.friend_atom_index[i])
+                if order == slots:
+                    continue
+                for new_slot, old_slot in zip(slots, order):
+                    self.hybrids_of_atoms[h.friend_atom_index[old_slot]].friend_hybrid_index[h.friend_hybrid_index[old_slot]] = new_slot
+                h.u[:, slots] = h.u[:, order]
+                h.friend_atom_index[slots] = h.friend_atom_index[order]
+                h.friend_hybrid_index[slots] = h.friend_hybrid_index[order]
         self.clpo_descript = LODescription(self.n_naos)
         self.create_los("CLPO", self.clpo_descript)
         self.clpo_descript.hybrid_labels = self.create_hybrid_labels("LHO", hybr2i_h)
