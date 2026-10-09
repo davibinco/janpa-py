@@ -81,7 +81,7 @@ def _run_janpa_pipeline(mol, mf, thres=1e-9, silent=True, custom_edges=None):
                 # 4. CLPO
                 clpo_opts = CLPOOptions(hybr_opt_conv_thresh=thres, hybr_opt_max_iter=1000)
                 if custom_edges is not None:
-                    # JANPA's parse_edges expects a string like "[(1, 2), (3, 4)]"
+                    # Bonds between 0-based atoms, a string like "[(1, 2), (1, 2)]"
                     clpo_opts.edges = str(custom_edges) 
                 
                 clpo_res = create_clpos(npa_res.sds_nao, npa_res.nao, molden_file.centers, clpo_opts)
@@ -121,6 +121,8 @@ def generate_HAO_molecule(mol, mf=None, silent=True, thres=1e-9, **kwargs):
 def generate_CLPO_molecule_edges(mol, mf=None, edges=None, silent=True, thres=1e-12, **kwargs):
     """
     Generates a molecule with CLPO orbitals and returns the molecule and SPA edges.
+    edges optionally imposes bonds on the CLPOs, between 0-based atoms, one pair per bond, e.g. [(1, 2), (1, 2)] for a
+    double bond between atoms 1 and 2. The bonds between the other atom pairs are found as usual.
     """
     if mf is None:
         mf = scf.RHF(mol).run()

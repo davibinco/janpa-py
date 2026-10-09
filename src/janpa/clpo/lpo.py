@@ -22,6 +22,7 @@ class CLPOOptions:
     hybr_opt_max_iter: int = 10000
     max_bond_ionicity_threshold: float = 0.90
     ry_occ_print_threshold: float = 1e-3
+    # Bonds imposed on the CLPOs, between 0-based atoms: "[(1, 2), (1, 2)]" = double bond 1=2. Other atom pairs are automatic
     edges: str = ""
 
 @dataclass
@@ -47,6 +48,7 @@ class PropertyOptimizedOrbitals:
         self.opt_max_iter = 10000
         self.opt_lewis_mode = False
         self.optimize_hybrids_n_iters_done = -1
+        self.lewis_bonds = None
 
     def get_naos_at_centers(self, naos):
         counts = np.zeros(self.n_atoms, dtype=int)
@@ -211,25 +213,87 @@ class PropertyOptimizedOrbitals:
             if cedge.endswith(","):
                 cedge = cedge[:-1].strip()
             parts = cedge.split(",")
+            if len(parts) not in (1, 2):
+                raise ValueError(f"Edge with invalid length ({len(parts)} elements). Only 1 or 2 allowed. Found: ({match.group(1)})")
             try:
-                if len(parts) == 1:
-                    node = int(parts[0].strip())
-                    edges.append([node, node])
-                elif len(parts) == 2:
-                    origin = int(parts[0].strip())
-                    destiny = int(parts[1].strip())
-                    edges.append([origin, destiny])
-                else:
-                    raise ValueError(f"Edge with invalid length ({len(parts)} elements). Only 1 or 2 allowed. Found: ({match.group(1)})")
+                nodes = [int(p.strip()) for p in parts]
             except ValueError:
                 raise ValueError(f"Not numerical value found on the edge: ({match.group(1)})")
+            edges.append([nodes[0], nodes[-1]])
         return edges
 
-    def contains_edge(self, lst, a, b):
-        for e in lst:
-            if (e[0] == a and e[1] == b) or (e[0] == b and e[1] == a):
-                return True
-        return False
+    def parse_lewis_structure(self, input_str):
+        """Parses the bonds imposed on the CLPOs, between 0-based atoms, one (A, B) per BD, e.g. "[(1, 2), (1, 2)]" for a
+        double bond between atoms 1 and 2. Returns the BD count per atom pair. The bonds
+        between the atom pairs not given are found as usual. LPs are not given: every hybrid left out of a BD is a
+        one-center orbital, LP or RY depending on its occupancy."""
+        bonds = {}
+        for a, b in self.parse_edges(input_str):
+            for x in (a, b):
+                if not 0 <= x < self.n_atoms:
+                    raise ValueError(f"Atom {x} in the Lewis structure does not exist (atoms are numbered 0..{self.n_atoms - 1})")
+            if a == b:
+                raise ValueError(f"({a},) in the Lewis structure: only bonds are given, the hybrids left out of them "
+                                 f"become LPs or RYs on their own")
+            key = (min(a, b), max(a, b))
+            bonds[key] = bonds.get(key, 0) + 1
+        for a in range(self.n_atoms):
+            n_bonds = sum(n for pair, n in bonds.items() if a in pair)
+            n_hybrids = len(self.naos_at_center[a])
+            if n_bonds > n_hybrids:
+                raise ValueError(f"Atom {a} ({self.centers[a].name}{a + 1}) has {n_bonds} BDs in the Lewis structure, "
+                                 f"but only {n_hybrids} hybrids")
+        return bonds
+
+    def lewis_structure_matching(self, d_in_hybrid_basis, hybr_addresses, current_pairs):
+        """Picks the hybrid pairs of the user-given bonds: exactly n_AB pairs between every listed atom pair (A, B), each
+        hybrid in at most one pair, trying to maximize the CLPO target function.
+        The hybrids of an atom rotate into each other during the optimization, so the slots chosen here only decide the
+        starting point. They are chosen greedily, and the pairs of the previous iteration are kept if they are better."""
+        # What a pair adds to the target function over leaving both hybrids as one-center orbitals. Ranking by the BD
+        # occupancy alone would pair two core or lone-pair hybrids (BD occupancy ~2) instead of the half-filled ones.
+        def gain(i_a, i_b):
+            d_aa = d_in_hybrid_basis[i_a, i_a]
+            d_bb = d_in_hybrid_basis[i_b, i_b]
+            d_ab = d_in_hybrid_basis[i_a, i_b]
+            return (0.5 * (d_aa + d_bb + np.sqrt((d_aa - d_bb)**2 + 4 * d_ab**2)))**2 - d_aa * d_aa - d_bb * d_bb
+
+        candidates = []
+        for (a, b) in self.lewis_bonds:
+            for ha in range(len(self.hybrids_of_atoms[a].nao_indices)):
+                for hb in range(len(self.hybrids_of_atoms[b].nao_indices)):
+                    i_a = hybr_addresses[a][ha]
+                    i_b = hybr_addresses[b][hb]
+                    candidates.append((-gain(i_a, i_b), i_a, i_b, (a, b)))
+        candidates.sort()
+
+        # Taking a pair never blocks another atom pair: an atom gives out at most as many hybrids as it has BDs, which was
+        # checked to fit, and any free hybrid of A can pair with any free hybrid of B.
+        missing = dict(self.lewis_bonds)
+        used = np.zeros(self.n_naos, dtype=bool)
+        pairs = []
+        for _, i_a, i_b, pair in candidates:
+            if missing[pair] > 0 and not used[i_a] and not used[i_b]:
+                pairs.append((i_a, i_b))
+                used[i_a] = used[i_b] = True
+                missing[pair] -= 1
+
+        if current_pairs is not None and \
+                sum(gain(i, j) for i, j in current_pairs) > sum(gain(i, j) for i, j in pairs):
+            return current_pairs
+        return pairs
+
+    def current_lewis_structure_pairs(self, hybr_addresses):
+        """The current hybrid pairs between the atom pairs of the user-given bonds, or None if their counts differ from it."""
+        pairs = []
+        counts = {}
+        for a in range(self.n_atoms):
+            for ha in range(len(self.hybrids_of_atoms[a].nao_indices)):
+                b = self.hybrids_of_atoms[a].friend_atom_index[ha]
+                if b > a and (a, b) in self.lewis_bonds:
+                    pairs.append((hybr_addresses[a][ha], hybr_addresses[b][self.hybrids_of_atoms[a].friend_hybrid_index[ha]]))
+                    counts[(a, b)] = counts.get((a, b), 0) + 1
+        return pairs if counts == self.lewis_bonds else None
 
     def optimize_hybrids(self):
         iter_count = 0
@@ -403,23 +467,20 @@ class PropertyOptimizedOrbitals:
     def reconnect_hybrids(self, d_in_hybrid_basis, hybr_addresses, allowall):
         max_bond_ionicity_threshold = self.options.max_bond_ionicity_threshold
         graph_table = [f"{'ID':<4s} {'Description':<30s} {'Occupancy':<10s} Composition"]
-        
-        n_edges_max = self.n_naos * (2 * self.n_naos - 1) // 2
-        if self.opt_lewis_mode:
-            n_edges_max += self.n_naos
-            
-        custom = False
-        custom_edges = []
-        if self.options.edges:
-            custom_edges = self.parse_edges(self.options.edges)
-            custom = True
-            if len(custom_edges) > n_edges_max:
-                raise ValueError(f"More edges than expected provided, provided: {len(custom_edges)}, expected: {n_edges_max}")
-                
+        # The user-given bonds only apply to the CLPOs, the LPOs stay the unbiased reference. They are placed first, and the
+        # remaining hybrids are matched as usual, except between the given atom pairs, whose bond count is fixed.
+        forced_pairs = []
+        forced = np.zeros(self.n_naos, dtype=bool)
+        if self.opt_lewis_mode and self.lewis_bonds is not None:
+            forced_pairs = self.lewis_structure_matching(d_in_hybrid_basis, hybr_addresses,
+                                                         self.current_lewis_structure_pairs(hybr_addresses))
+            for i, j in forced_pairs:
+                forced[i] = forced[j] = True
+
         G = nx.Graph()
         for i in range(2 * self.n_naos):
             G.add_node(i)
-            
+
         nao_owners = [None] * self.n_naos
         for a in range(self.n_atoms):
             for ha in range(len(self.hybrids_of_atoms[a].nao_indices)):
@@ -427,38 +488,29 @@ class PropertyOptimizedOrbitals:
                 self.hybrids_of_atoms[a].friend_hybrid_index[ha] = -1
                 i_a = hybr_addresses[a][ha]
                 nao_owners[i_a] = [a, ha]
+                if forced[i_a]: continue
                 d_aa = d_in_hybrid_basis[i_a, i_a]
-                
-                nadded = True
-                if custom:
-                    if self.contains_edge(custom_edges, i_a, i_a):
-                        G.add_edge(i_a, self.n_naos + i_a, weight=1000.0)
-                        nadded = False
-                        
-                if nadded and self.opt_lewis_mode:
+
+                if self.opt_lewis_mode:
                     G.add_edge(i_a, self.n_naos + i_a, weight=d_aa * d_aa)
-                    
+
                 for b in range(self.n_atoms):
                     if b == a: continue
+                    if forced_pairs and (min(a, b), max(a, b)) in self.lewis_bonds: continue
                     for hb in range(len(self.hybrids_of_atoms[b].nao_indices)):
                         i_b = hybr_addresses[b][hb]
-                        if i_b > i_a: continue
-                        if custom:
-                            if self.contains_edge(custom_edges, i_a, i_b):
-                                G.add_edge(i_b, i_a, weight=1000.0)
-                                continue
-                                
+                        if i_b > i_a or forced[i_b]: continue
                         d_bb = d_in_hybrid_basis[i_b, i_b]
                         d_ab = d_in_hybrid_basis[i_a, i_b]
                         bd_occ = 0.5 * (d_aa + d_bb + np.sqrt((d_aa - d_bb)**2 + 4 * d_ab**2))
                         nb_occ = d_aa + d_bb - bd_occ
                         f = (bd_occ > 1.0) and (nb_occ < 1.0) and (np.cos(np.arctan2(2 * d_ab, np.abs(d_aa - d_bb))) < max_bond_ionicity_threshold)
-                        
+
                         if allowall or f:
                             weight = bd_occ * bd_occ if self.opt_lewis_mode else d_ab * d_ab
                             G.add_edge(i_a, i_b, weight=weight)
-                            
-        matching = nx.max_weight_matching(G, maxcardinality=False, weight='weight')
+
+        matching = list(nx.max_weight_matching(G, maxcardinality=False, weight='weight')) + forced_pairs
         
         remap = np.full(2 * self.n_naos, -1, dtype=int)
         for u, v in matching:
@@ -700,6 +752,8 @@ class PropertyOptimizedOrbitals:
         self.naos_at_center = self.get_naos_at_centers(naos)
         self.hybrids_of_atoms = [AtomicHybrids(self.naos_at_center[a]) for a in range(self.n_atoms)]
         self.dab = self.diatomic_submatrices()
+        if options.edges:
+            self.lewis_bonds = self.parse_lewis_structure(options.edges)
         
         print("Creating initial guess...")
         self.cs_guess()

@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     
     p.add_argument("--print-geom", action="store_true", help="Print geometry")
     p.add_argument("--overlap-naive", action="store_true", help="Use naive overlap calculation")
-    p.add_argument("--edges", default="", help="Custom bonding graph edges")
+    p.add_argument("--edges", default="", help="Bonds imposed on the CLPOs, between 0-based atoms, one pair per bond, e.g. \"[(1,2),(1,2)]\" = double bond 1=2; bonds between other atom pairs are found automatically")
     p.add_argument("--hybr-opt-thresh", type=float, default=1e-5, help="Hybrid optimization threshold")
     p.add_argument("--hybr-opt-max-iter", type=int, default=10000, help="Max hybrid optimization iterations")
     p.add_argument("--max-bond-ionicity", type=float, default=0.90, help="Max CLPO bond ionicity")
