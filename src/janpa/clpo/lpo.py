@@ -459,7 +459,11 @@ class PropertyOptimizedOrbitals:
                 else:
                     dgs[b] = self.dab[b][a].T @ self.dab[b][a]
             
-            ui[a], _ = simultaneous_diagonalization(dgs)
+            n_max_iters = len(self.naos_at_center[a]) * 100
+            ui[a], n_iters = simultaneous_diagonalization(dgs, max_iters=n_max_iters)
+            if n_iters >= n_max_iters:
+                print(f"Warning (non-critical): simultaneous diag. did not converge when "
+                      f"generating initial AO-to-AHO guess for atom {a + 1}")
             self.hybrids_of_atoms[a].u = ui[a]
             
         for a in range(self.n_atoms):
