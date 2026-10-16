@@ -25,3 +25,14 @@ def h4_molden_path(tmp_path_factory):
     
     pyscf_molden.from_mo(mol, str(molden_file), mf.mo_coeff, occ=mf.mo_occ, ene=mf.mo_energy)
     return str(molden_file)
+@pytest.fixture(scope="session")
+def h2co_molden_path(tmp_path_factory):
+    """Generate a formaldehyde 6-31G MOLDEN file using PySCF (p shells, lone pairs and a double bond)."""
+    tmp_dir = tmp_path_factory.mktemp("data")
+    molden_file = tmp_dir / "h2co.molden"
+    
+    mol = gto.M(atom="C 0 0 0; O 0 0 1.205; H 0 0.943 -0.587; H 0 -0.943 -0.587", basis="6-31g", unit="Angstrom")
+    mf = scf.RHF(mol).run()
+    
+    pyscf_molden.from_mo(mol, str(molden_file), mf.mo_coeff, occ=mf.mo_occ, ene=mf.mo_energy)
+    return str(molden_file)
