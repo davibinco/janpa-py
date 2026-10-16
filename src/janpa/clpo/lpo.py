@@ -4,16 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 import numpy as np
-import networkx as nx
 
 from janpa.gto.basis import AtomicCenter, BasisFunction
 from janpa.utils.matrix import (
     transform_symmetric_to_new_basis,
-    symmetric_orthogonalize,
 )
 from janpa.utils.simult_diag import simultaneous_diagonalization
 from .lodesc import LODescription, LO_TYPE_RY, LO_TYPE_LP, LO_TYPE_BD, LO_TYPE_NB
 from .hybrids import AtomicHybrids
+from .matching import max_weight_matching_pairs
 
 @dataclass
 class CLPOOptions:
@@ -137,66 +136,6 @@ class PropertyOptimizedOrbitals:
             result = _dij.T @ u_col
         return result.reshape(-1, 1)
 
-    def grad_dnlo_sq(self, a, pwin):
-        u_a = self.hybrids_of_atoms[a].u
-        n_vecs = u_a.shape[1]
-        vec_len = u_a.shape[0]
-        result = np.zeros((vec_len, n_vecs))
-        win = 0.0
-        for i in range(n_vecs):
-            daa_ha = self.dab_dot_h(a, a, i)
-            wii = self.hybrids_of_atoms[a].hybrid_scalar_mul(i, daa_ha)
-            b = self.hybrids_of_atoms[a].friend_atom_index[i]
-            if b == -1:
-                result[:, i] = daa_ha[:, 0] * wii
-                win += wii * wii
-            else:
-                dab_hb = self.dab_dot_h(a, b, self.hybrids_of_atoms[a].friend_hybrid_index[i])
-                wij = self.hybrids_of_atoms[a].hybrid_scalar_mul(i, dab_hb)
-                result[:, i] = daa_ha[:, 0] * wii + dab_hb[:, 0] * wij
-                win += wii * wii + wij * wij
-        if pwin is not None:
-            pwin[0] = win
-        return result
-
-    def grad_dnlo_occ2(self, a, pwin):
-        u_a = self.hybrids_of_atoms[a].u
-        n_vecs = u_a.shape[1]
-        vec_len = u_a.shape[0]
-        result = np.zeros((vec_len, n_vecs))
-        win = 0.0
-        for i in range(n_vecs):
-            daa_ha = self.dab_dot_h(a, a, i)
-            dii = self.hybrids_of_atoms[a].hybrid_scalar_mul(i, daa_ha)
-            b = self.hybrids_of_atoms[a].friend_atom_index[i]
-            if b == -1:
-                wii = dii
-                result[:, i] += daa_ha[:, 0] * wii
-                win += dii * dii
-            else:
-                hb = self.hybrids_of_atoms[a].friend_hybrid_index[i]
-                dab_hb = self.dab_dot_h(a, b, hb)
-                dij = self.hybrids_of_atoms[a].hybrid_scalar_mul(i, dab_hb)
-                dbb_hb = self.dab_dot_h(b, b, hb)
-                djj = self.hybrids_of_atoms[b].hybrid_scalar_mul(hb, dbb_hb)
-                
-                sqrt_val = np.sqrt((dii - djj)**2 + 4 * dij**2)
-                bd_occ = 0.5 * (dii + djj + sqrt_val)
-                wii = bd_occ * 0.5 * (1 + (dii - djj) / sqrt_val)
-                wij = bd_occ * dij / sqrt_val
-                
-                result[:, i] += daa_ha[:, 0] * wii + dab_hb[:, 0] * wij
-                win += bd_occ * bd_occ / 2.0
-        if pwin is not None:
-            pwin[0] = win
-        return result
-
-    def grad_dnlo(self, a, pwin):
-        if not self.opt_lewis_mode:
-            return self.grad_dnlo_sq(a, pwin)
-        else:
-            return self.grad_dnlo_occ2(a, pwin)
-
     @staticmethod
     def parse_edges(input_str):
         edges = []
@@ -295,18 +234,86 @@ class PropertyOptimizedOrbitals:
                     counts[(a, b)] = counts.get((a, b), 0) + 1
         return pairs if counts == self.lewis_bonds else None
 
+    def _hybrid_groups(self):
+        """Atoms grouped by their number of NAOs, with the NAO indices of each group as a (k, n) array. The hybrids of a
+        group are handled as one (k, n, n) stack of the atoms' u matrices, so the optimization costs a few numpy calls per
+        group instead of several per hybrid. A hybrid (atom a, slot h) is addressed by its NAO index naos_at_center[a][h]."""
+        groups = {}
+        for a in range(self.n_atoms):
+            if len(self.naos_at_center[a]):
+                groups.setdefault(len(self.naos_at_center[a]), []).append(a)
+        return [(atoms, np.array([self.naos_at_center[a] for a in atoms])) for atoms in groups.values()]
+
+    def _hybrid_target_and_gradient(self, d, groups, partners, paired, u):
+        """Target function and its gradient with respect to the hybrids of every group (grad_DNLO_sq and
+        grad_DNLO_occ2 in the Java code).
+
+        In the sq (LPO) mode, a hybrid h_i with occupancy d_ii, bonded to h_j by d_ij, contributes d_ii^2 + d_ij^2 with the
+        gradient D_aa h_i d_ii + D_ab h_j d_ij. In the occ2 (CLPO) mode, a bonded hybrid contributes half the squared BD
+        occupancy instead, with the matching weights, and a one-center hybrid d_ii^2 in both modes."""
+        # Column i of m is D h_i over all NAOs
+        m = np.empty((self.n_naos, self.n_naos))
+        for (_, rows), u_g in zip(groups, u):
+            m[:, rows] = np.matmul(d[:, rows].transpose(1, 0, 2), u_g).transpose(1, 0, 2)
+        m_diag = [m[rows[:, :, None], rows[:, None, :]] for _, rows in groups]                # D_aa h_i
+        m_part = [m[rows[:, :, None], partners[rows][:, None, :]] for _, rows in groups]      # D_ab h_j
+        dii = np.empty(self.n_naos)
+        dij = np.empty(self.n_naos)
+        for (_, rows), u_g, md, mp in zip(groups, u, m_diag, m_part):
+            dii[rows] = np.sum(u_g * md, axis=1)
+            dij[rows] = np.sum(u_g * mp, axis=1)
+        dij[~paired] = 0.0
+
+        wii = dii.copy()
+        wij = dij
+        win_terms = dii * dii + dij * dij
+        if self.opt_lewis_mode:
+            dii_p, djj_p, dij_p = dii[paired], dii[partners[paired]], dij[paired]
+            sqrt_val = np.sqrt((dii_p - djj_p)**2 + 4 * dij_p**2)
+            bd_occ = 0.5 * (dii_p + djj_p + sqrt_val)
+            wii[paired] = bd_occ * 0.5 * (1 + (dii_p - djj_p) / sqrt_val)
+            wij = np.zeros(self.n_naos)
+            wij[paired] = bd_occ * dij_p / sqrt_val
+            win_terms[paired] = bd_occ * bd_occ / 2.0
+
+        g = [md * wii[rows][:, None, :] + mp * wij[rows][:, None, :]
+             for (_, rows), md, mp in zip(groups, m_diag, m_part)]
+        return float(np.sum(win_terms)), g
+
     def optimize_hybrids(self):
+        groups = self._hybrid_groups()
+        naos = self.naos_at_center
+        # SDS in the NAO basis, with the blocks between atoms a > b taken as dab[a][b] and the ones for a < b as
+        # dab[b][a]^T, like dab_dot_h does
+        d = np.empty((self.n_naos, self.n_naos))
+        for a in range(self.n_atoms):
+            for b in range(a + 1):
+                d[np.ix_(naos[a], naos[b])] = self.dab[a][b]
+                if b < a:
+                    d[np.ix_(naos[b], naos[a])] = self.dab[a][b].T
+        # The bonding partner of every hybrid, the hybrid itself for one-center ones
+        partners = np.arange(self.n_naos)
+        for a in range(self.n_atoms):
+            h = self.hybrids_of_atoms[a]
+            for i in range(len(naos[a])):
+                if h.friend_atom_index[i] != -1:
+                    partners[naos[a][i]] = naos[h.friend_atom_index[i]][h.friend_hybrid_index[i]]
+        paired = partners != np.arange(self.n_naos)
+        d_diag = [d[rows[:, :, None], rows[:, None, :]] for _, rows in groups]               # D_aa of each atom
+
         iter_count = 0
-        g = [None] * self.n_atoms
-        for a in range(self.n_atoms):
-            self.hybrids_of_atoms[a].backup_u()
-            
-        daa_h_basis = [None] * self.n_atoms
-        for a in range(self.n_atoms):
-            daa_h_basis[a] = self.hybrids_of_atoms[a].u.T @ self.dab[a][a] @ self.hybrids_of_atoms[a].u
+        u = [np.array([self.hybrids_of_atoms[a].u for a in atoms]) for atoms, _ in groups]
+        u_saved = [u_g.copy() for u_g in u]
+
+        def store_u():
+            for (atoms, _), u_g, s_g in zip(groups, u, u_saved):
+                for k, a in enumerate(atoms):
+                    self.hybrids_of_atoms[a].u = u_g[k].copy()
+                    self.hybrids_of_atoms[a].u_saved = s_g[k].copy()
+
+        daa_h_basis = [np.matmul(np.matmul(u_g.transpose(0, 2, 1), d_g), u_g) for u_g, d_g in zip(u, d_diag)]
             
         changes = np.zeros((2, 2))
-        pwin = [0.0]
         win_prev = -1.0
         print("Iterative optimization of atomic hybrids")
         print(" Target Total max.atomic Total max.atomic Nxt.step")
@@ -318,17 +325,8 @@ class PropertyOptimizedOrbitals:
         while True:
             iter_count += 1
             self.optimize_hybrids_n_iters_done = iter_count
-            win = 0.0
-            invlambda0 = 0.0
-            dfdlam = 0.0
-            
-            for a in range(self.n_atoms):
-                g[a] = self.grad_dnlo(a, pwin)
-                win += pwin[0]
-                invlambda0 += np.abs(np.trace(g[a].T @ self.hybrids_of_atoms[a].u))
-                dfdlam += np.trace(g[a] @ g[a].T)
-                tmp = g[a].T @ self.hybrids_of_atoms[a].u
-                dfdlam -= np.trace(tmp @ tmp)
+            win, g = self._hybrid_target_and_gradient(d, groups, partners, paired, u)
+            invlambda0 = sum(float(np.sum(np.abs(np.sum(g_g * u_g, axis=(1, 2))))) for g_g, u_g in zip(g, u))
                 
             invlambda0 = invlambda0 / self.n_naos
             print(f"{iter_count:5d} {win:12.4f} {(win) if iter_count == 1 else (win - win_prev):+8.1e}", end="")
@@ -336,19 +334,19 @@ class PropertyOptimizedOrbitals:
             if win > win_prev:
                 invlambda = 1e-16 * invlambda0
                 dont_scale_stepsize = True
-                for a in range(self.n_atoms):
-                    self.hybrids_of_atoms[a].backup_u()
+                u_saved = [u_g.copy() for u_g in u]
                 if win - win_prev < self.target_function_conv_thresh:
                     print(f" << Converged! (threshold = {self.target_function_conv_thresh:.2e}) >>")
                     print("Optimization of hybrids finished")
+                    store_u()
                     return win
                 win_prev = win
             else:
-                for a in range(self.n_atoms):
-                    self.hybrids_of_atoms[a].restore_u()
+                u = [s_g.copy() for s_g in u_saved]
                 if win_prev - win < self.target_function_conv_thresh:
                     print(" << No step can be taken >>")
                     print("Optimization of hybrids finished")
+                    store_u()
                     return win_prev
                 if dont_scale_stepsize:
                     invlambda = invlambda0
@@ -359,26 +357,25 @@ class PropertyOptimizedOrbitals:
             if iter_count >= self.opt_max_iter:
                 print(" << Maximum number of iterations reached >>")
                 print("Optimization of hybrids finished")
-                for a in range(self.n_atoms):
-                    self.hybrids_of_atoms[a].restore_u()
+                u = [s_g.copy() for s_g in u_saved]
+                store_u()
                 return win_prev
                 
             changes[:] = 0.0
-            for a in range(self.n_atoms):
-                ua_new = symmetric_orthogonalize(g[a] + self.hybrids_of_atoms[a].u * invlambda)
-                du2 = np.linalg.norm(ua_new - self.hybrids_of_atoms[a].u, 'fro')**2
-                changes[0, 0] += du2
-                n_dim = len(self.hybrids_of_atoms[a].nao_indices)
-                if du2 / n_dim > changes[0, 1]:
-                    changes[0, 1] = du2 / n_dim
+            for k, (u_g, g_g, d_g) in enumerate(zip(u, g, d_diag)):
+                # Symmetric orthogonalization of every atom's new hybrids, U S V^T -> U V^T
+                svd_u, _, svd_vt = np.linalg.svd(g_g + u_g * invlambda)
+                u_new = np.matmul(svd_u, svd_vt)
+                du2 = np.sum((u_new - u_g)**2, axis=(1, 2))
+                changes[0, 0] += np.sum(du2)
+                changes[0, 1] = max(changes[0, 1], np.max(du2) / u_g.shape[1])
                     
-                daa_new = ua_new.T @ self.dab[a][a] @ ua_new
-                du2 = np.linalg.norm(daa_h_basis[a] - daa_new, 'fro')**2
-                daa_h_basis[a] = daa_new
-                changes[1, 0] += du2
-                if du2 > changes[1, 1]:
-                    changes[1, 1] = du2
-                self.hybrids_of_atoms[a].u = ua_new
+                daa_new = np.matmul(np.matmul(u_new.transpose(0, 2, 1), d_g), u_new)
+                du2 = np.sum((daa_h_basis[k] - daa_new)**2, axis=(1, 2))
+                daa_h_basis[k] = daa_new
+                changes[1, 0] += np.sum(du2)
+                changes[1, 1] = max(changes[1, 1], np.max(du2))
+                u[k] = u_new
                 
             print(f"{changes[0, 0]:12.6f} {changes[0, 1]:13.7f} {changes[1, 0]:12.5f} {changes[1, 1]:13.7f} ", end="")
             if dont_scale_stepsize:
@@ -481,9 +478,7 @@ class PropertyOptimizedOrbitals:
             for i, j in forced_pairs:
                 forced[i] = forced[j] = True
 
-        G = nx.Graph()
-        for i in range(2 * self.n_naos):
-            G.add_node(i)
+        edges = []
 
         nao_owners = [None] * self.n_naos
         for a in range(self.n_atoms):
@@ -496,7 +491,7 @@ class PropertyOptimizedOrbitals:
                 d_aa = d_in_hybrid_basis[i_a, i_a]
 
                 if self.opt_lewis_mode:
-                    G.add_edge(i_a, self.n_naos + i_a, weight=d_aa * d_aa)
+                    edges.append((i_a, self.n_naos + i_a, d_aa * d_aa))
 
                 for b in range(self.n_atoms):
                     if b == a: continue
@@ -512,9 +507,9 @@ class PropertyOptimizedOrbitals:
 
                         if allowall or f:
                             weight = bd_occ * bd_occ if self.opt_lewis_mode else d_ab * d_ab
-                            G.add_edge(i_a, i_b, weight=weight)
+                            edges.append((i_a, i_b, weight))
 
-        matching = list(nx.max_weight_matching(G, maxcardinality=False, weight='weight')) + forced_pairs
+        matching = max_weight_matching_pairs(2 * self.n_naos, edges) + forced_pairs
         
         remap = np.full(2 * self.n_naos, -1, dtype=int)
         for u, v in matching:

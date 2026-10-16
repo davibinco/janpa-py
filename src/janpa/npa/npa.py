@@ -350,14 +350,9 @@ class NPA:
         print_matrix(overlap_matrix, "The Overlap Matrix in spherical function AO basis:", self.ao_names, self.ao_names, self.options.S_Matrix_File.get_string(), self.options.MatrixFloatNumberFormat.get_string(), self.options.MatrixLineWidth.get_int())
         
         print("Building density matrix D... ", end="")
-        self.d_global = np.zeros((n_bas, n_bas))
-        for basf1 in range(n_bas):
-            for basf2 in range(basf1, n_bas):
-                tmp = 0.0
-                for mo in molden.mos:
-                    tmp += mo.bs_coefs[basf1] * mo.bs_coefs[basf2] * mo.occupancy
-                self.d_global[basf1, basf2] = tmp
-                self.d_global[basf2, basf1] = tmp
+        mo_occ = np.array([mo.occupancy for mo in molden.mos])
+        self.d_global = (mo_coef_matrix.T * mo_occ) @ mo_coef_matrix
+        self.d_global = 0.5 * (self.d_global + self.d_global.T)
         print("done.")
         
         print_matrix(self.d_global, "The D density Matrix in spherical function AO basis:", self.ao_names, self.ao_names, self.options.D_Matrix_File.get_string(), self.options.MatrixFloatNumberFormat.get_string(), self.options.MatrixLineWidth.get_int())
