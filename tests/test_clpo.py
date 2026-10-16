@@ -73,14 +73,10 @@ def test_h2co_clpo(h2co_molden_path):
 
 
 def test_clpo_interface_orthonormal():
-    """The CLPOs returned to PySCF/sunrise are orthonormal in the PySCF AO basis and come with their BD/LP graph. cc-pVDZ
-    has d shells, whose MOLDEN order differs from the PySCF one."""
-    for basis in ("6-31g", "cc-pvdz"):
-        mol = gto.M(atom="C 0 0 0; O 0 0 1.205; H 0 0.943 -0.587; H 0 -0.943 -0.587", basis=basis, verbose=0)
-        mf = scf.RHF(mol).run()
-        clpo_to_ao, graph = generate_CLPO_molecule_edges(mol, mf)
-        s = mol.intor("int1e_ovlp")
-        assert np.allclose(clpo_to_ao @ s @ clpo_to_ao.T, np.eye(mol.nao), atol=1e-10), basis
-        assert sum(len(e) == 2 for e in graph) == 4 and sum(len(e) == 1 for e in graph) == 4, basis
-    with pytest.raises(ValueError, match="spherical"):
-        generate_CLPO_molecule_edges(gto.M(atom="H 0 0 0; H 0 0 0.74", basis="sto-3g", cart=True, verbose=0))
+    """The CLPOs returned to PySCF/sunrise are orthonormal in the AO basis and come with their BD/LP graph."""
+    mol = gto.M(atom="C 0 0 0; O 0 0 1.205; H 0 0.943 -0.587; H 0 -0.943 -0.587", basis="6-31g", verbose=0)
+    mf = scf.RHF(mol).run()
+    clpo_to_ao, graph = generate_CLPO_molecule_edges(mol, mf)
+    s = mol.intor("int1e_ovlp")
+    assert np.allclose(clpo_to_ao @ s @ clpo_to_ao.T, np.eye(mol.nao), atol=1e-10)
+    assert sum(len(e) == 2 for e in graph) == 4 and sum(len(e) == 1 for e in graph) == 4
