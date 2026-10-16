@@ -56,7 +56,12 @@ def extract_clpo_graph(npa_res, clpo_res) -> List[Tuple[int, ...]]:
 def _run_janpa_pipeline(mol, mf, thres=1e-9, silent=True, custom_edges=None):
     """
     Internal helper to run the JANPA pipeline entirely in memory/tempfiles.
+    Returns the AHO and CLPO coefficients as rows over the AOs of mol, in PySCF order.
     """
+    if mol.cart:
+        raise ValueError("JANPA needs spherical (pure) basis functions, build the molecule with cart=False")
+    if max(mol.bas_angular(ib) for ib in range(mol.nbas)) > 4:
+        raise ValueError("JANPA supports basis functions up to l = 4 (g), and the MOLDEN export drops higher ones")
     # Use a temporary directory so we don't clutter the user's workspace
     with tempfile.TemporaryDirectory() as tmpdir:
         molden_in = os.path.join(tmpdir, "temp.molden")
@@ -89,8 +94,12 @@ def _run_janpa_pipeline(mol, mf, thres=1e-9, silent=True, custom_edges=None):
                 # 5. Extract Graph
                 graph = extract_clpo_graph(npa_res, clpo_res)
                 
-                # 6. Get Transformation Matrices
-                aho_to_ao = clpo_res.clpo.nao_to_hybrids.T @ npa_res.nao_to_ao
+                # 6. Get Transformation Matrices. JANPA's AOs are in MOLDEN order, which differs from the PySCF one
+                # for d, f and g shells: MOLDEN position k holds the PySCF AO ao_order[k].
+                ao_order = pyscf_molden.order_ao_index(mol)
+                aho_to_molden_ao = clpo_res.clpo.nao_to_hybrids.T @ npa_res.nao_to_ao
+                aho_to_ao = np.empty_like(aho_to_molden_ao)
+                aho_to_ao[:, ao_order] = aho_to_molden_ao
                 clpo_to_ao = clpo_res.clpo.lo_to_hybrids @ aho_to_ao
                 
         finally:
