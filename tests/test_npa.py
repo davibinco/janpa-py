@@ -30,3 +30,15 @@ def test_h4_npa_electrons(h4_molden_path):
     
     # Total NPA charge should be 0 (4 protons - 4 electrons)
     assert np.isclose(np.sum(res.npa_charges), 0.0, atol=1e-5)
+def test_h2co_tz_naos_orthonormal(h2co_tz_molden_path):
+    """cc-pVTZ has light NRBs, which go through the Schmidt-Lowdin branch of step 6. The NAOs must be orthonormal and the
+    charges equal to those of the Java JANPA."""
+    mf = MoldenFile.load(h2co_tz_molden_path)
+    mf.coords_to_au()
+    mf.to_unnormalized_primitive_coefs()
+    
+    res = run_npa(mf)
+    
+    c = res.nao_to_ao
+    assert np.allclose(c @ res.overlap_matrix @ c.T, np.eye(len(c)), atol=1e-9)
+    assert np.allclose(res.npa_charges, [0.3930297, -0.5690580, 0.0880141, 0.0880141], atol=1e-6)

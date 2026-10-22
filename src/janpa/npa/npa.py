@@ -697,7 +697,7 @@ class NPA:
             for i in range(n_light):
                 ow_nrb[light_nrbs[i], light_nrbs[i]] = 1.0
                 
-            new_nrb_overlap = ow_nrb @ nrb_new_overlap @ ow_nrb.T
+            new_nrb_overlap = ow_nrb.T @ nrb_new_overlap @ ow_nrb
             print_matrix(new_nrb_overlap, "new_NRB_Overlap before Schmidt", None, None, self.options.NRB_Overlap_after_OW_heavy_File.get_string(), self.options.MatrixFloatNumberFormat.get_string(), self.options.MatrixLineWidth.get_int())
             
             os = np.eye(n_nrb)
@@ -706,7 +706,7 @@ class NPA:
                     os[light_nrbs[i], heavy_nrbs[j]] -= new_nrb_overlap[light_nrbs[i], heavy_nrbs[j]]
                     
             ow_nrb = ow_nrb @ os.T
-            new_nrb_overlap = ow_nrb @ nrb_new_overlap @ ow_nrb.T
+            new_nrb_overlap = ow_nrb.T @ nrb_new_overlap @ ow_nrb
             print_matrix(new_nrb_overlap, "new_NRB_Overlap after Schmidt", None, None, self.options.NRB_Overlap_after_OS2_File.get_string(), self.options.MatrixFloatNumberFormat.get_string(), self.options.MatrixLineWidth.get_int())
             
             if n_light > 0:
@@ -716,7 +716,7 @@ class NPA:
                 olnrb[np.ix_(light_nrbs, light_nrbs)] = ol
                 ow_nrb = ow_nrb @ olnrb.T
                 
-        nrb_overlap_test = ow_nrb @ nrb_new_overlap @ ow_nrb.T
+        nrb_overlap_test = ow_nrb.T @ nrb_new_overlap @ ow_nrb
         print_matrix(nrb_overlap_test, "NRB new overlap", None, None, self.options.NRB_Overlap_after_OW2_final_File.get_string(), self.options.MatrixFloatNumberFormat.get_string(), self.options.MatrixLineWidth.get_int())
         
         diff_norm2 = 0.0
