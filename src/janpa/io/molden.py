@@ -84,6 +84,16 @@ class MoldenFile:
                     norm2 = primitive_int_1d_sphr(2 * l + 2, 2 * rp.exponents[cf])
                 rp.coefs[cf] *= np.sqrt(norm2)
 
+    def normalize_contractions(self) -> None:
+        """Scale the (unnormalized primitive) contraction coefs so that each contracted function has unit norm.
+        Needed for programs which write the raw basis set coefs, e.g. Psi4 with general contractions."""
+        for rp in self.radial_parts:
+            l2 = 2 * rp.l_used_with + 2 + 2 * rp.addit_r_power
+            ints = np.array([[primitive_int_1d_sphr(l2, a + b) for b in rp.exponents] for a in rp.exponents])
+            rp.coefs = rp.coefs / np.sqrt(rp.coefs @ ints @ rp.coefs)
+        for bf in self.basis:
+            bf.coefs = self.radial_parts[bf.radial_part_id].coefs.copy()
+
     def un_normalize_primitives(self, ylm_norms2_over4pi: np.ndarray) -> None:
         if not self.is_spherical:
             raise ValueError("UnnormalizePrimitives() currently works with spherical basis sets only!")
@@ -348,7 +358,8 @@ class MoldenFile:
             )
             raw_basis.append(base_bf)
             
-        is_spherical = use_5d and use_7f
+        # s and p shells are the same in both conventions, and some programs (e.g. Psi4) then omit the [5D] tags
+        is_spherical = (use_5d and use_7f) or mf.highest_l <= 1
         if mf.highest_l >= 4:
             is_spherical = is_spherical and use_9g
         mf.is_spherical = is_spherical

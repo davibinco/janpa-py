@@ -232,3 +232,5 @@ erik/
 erik/*
 *.data
 *.molden
+# Psi4
+timer.dat
