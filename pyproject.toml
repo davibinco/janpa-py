@@ -17,7 +17,7 @@ authors = [
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
-    "networkx>=3.0",
+    "rustworkx>=0.13",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +26,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "pyscf>=2.4",  # Added for test fixtures
+    "networkx>=3.0",  # Reference for the matching tests
 ]
 pyscf = [
     "pyscf>=2.4",

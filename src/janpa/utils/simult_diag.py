@@ -1,36 +1,9 @@
 """Simultaneous diagonalization of a set of symmetric matrices by Jacobi rotations. Cardellini & Sauer (1996) algorithm. Replaces CS96_SimultDiag.java. This is the ONE matrix algorithm with no direct scipy equivalent. """
 from __future__ import annotations
 
+import math
+
 import numpy as np
-
-def _2x2_rotate(a: np.ndarray, i: int, j: int, c: float, s: float) -> None:
-    """Apply a 2x2 Jacobi rotation to rows/cols i and j of matrix a (in-place)."""
-    aii = a[i, i]
-    ajj = a[j, j]
-    aij = a[i, j]
-    aji = a[j, i]
-
-    # Temporarily copy rows & columns
-    row_i = a[i, :].copy()
-    row_j = a[j, :].copy()
-    
-    # Apply rotation over rows
-    a[i, :] = c * row_i + s * row_j
-    a[j, :] = -s * row_i + c * row_j
-
-    col_i = a[:, i].copy()
-    col_j = a[:, j].copy()
-    
-    # Apply rotation over columns
-    a[:, i] = c * col_i + s * col_j
-    a[:, j] = -s * col_i + c * col_j
-
-    # Fix the intersecting 2x2 block that was inadvertently modified 
-    # by the overlapping row & column transformations.
-    a[i, i] = c*c*aii + s*s*ajj + c*s*(aij + aji)
-    a[j, j] = c*c*ajj + s*s*aii - c*s*(aij + aji)
-    a[i, j] = c*c*aij - s*s*aji + c*s*(ajj - aii)
-    a[j, i] = c*c*aji - s*s*aij + c*s*(ajj - aii)
 
 def simultaneous_diagonalization(
     matrices: list[np.ndarray],
@@ -54,59 +27,66 @@ def simultaneous_diagonalization(
     """
     if not matrices:
         raise ValueError("matrices list cannot be empty")
-        
-    n = matrices[0].shape[0]
-    
+
+    # All matrices are rotated together as one (K, n, n) stack, so each Jacobi rotation costs a few numpy calls
+    # instead of a few per matrix.
+    a = np.array(matrices, dtype=float)
+    n = a.shape[1]
+
     if u0 is None:
         U = np.eye(n)
     else:
         # Match Java logic: result = u0.transpose()
         U = u0.T.copy()
-        
+
     n_iter = 0
-    
+
     while True:
         s_max = 0.0
-        
+
         # Single sweep iteration
         for i in range(n):
             for j in range(i + 1, n):
-                t_on = 0.0
-                t_off = 0.0
-                
                 # Evaluate angles required to simultaneously annihilate off-diagonals
-                for k in range(len(matrices)):
-                    a = matrices[k]
-                    h0 = a[i, i] - a[j, j]
-                    h1 = a[i, j] + a[j, i]
-                    t_on += h0 * h0 - h1 * h1
-                    t_off += h0 * h1
-                
-                t_off *= 2.0
-                theta = np.arctan2(t_off, t_on) / 4.0
-                c = np.cos(theta)
-                s = np.sin(theta)
-                
-                if np.abs(s) > s_max:
-                    s_max = np.abs(s)
-                    
-                # Apply computed rotation to all matrices in the list
-                for k in range(len(matrices)):
-                    _2x2_rotate(matrices[k], i, j, c, s)
-                    
+                h0 = a[:, i, i] - a[:, j, j]
+                h1 = a[:, i, j] + a[:, j, i]
+                t_on = float(np.dot(h0, h0) - np.dot(h1, h1))
+                t_off = 2.0 * float(np.dot(h0, h1))
+                theta = math.atan2(t_off, t_on) / 4.0
+                c = math.cos(theta)
+                s = math.sin(theta)
+
+                if abs(s) > s_max:
+                    s_max = abs(s)
+                if s == 0.0:
+                    continue  # identity rotation
+
+                # Apply computed rotation R = [[c, s], [-s, c]] as A -> R A R^T to all matrices
+                row_i = a[:, i, :].copy()
+                row_j = a[:, j, :].copy()
+                a[:, i, :] = c * row_i + s * row_j
+                a[:, j, :] = c * row_j - s * row_i
+                col_i = a[:, :, i].copy()
+                col_j = a[:, :, j].copy()
+                a[:, :, i] = c * col_i + s * col_j
+                a[:, :, j] = c * col_j - s * col_i
+
                 # Update transformation matrix U (multiplies on the left by rotation)
                 U_i = U[i, :].copy()
                 U_j = U[j, :].copy()
                 U[i, :] = c * U_i + s * U_j
-                U[j, :] = -s * U_i + c * U_j
-                
+                U[j, :] = c * U_j - s * U_i
+
         n_iter += 1
-        
+
         # Break conditions equivalent to Java's do-while
         if s_max <= threshold:
             break
         if max_iters >= 0 and n_iter >= max_iters:
             break
-            
+
+    for k, m in enumerate(matrices):
+        m[...] = a[k]
+
     # Return transpose to match Java `return result.transpose()`
     return U.T, n_iter
