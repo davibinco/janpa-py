@@ -1,7 +1,7 @@
 name: tests-psi4
 
-# Psi4 is not on PyPI, so this workflow installs it with conda and runs the full test suite, including the psi4 tests
-# that the pip-based workflow (tests.yml) skips.
+# Psi4 is not on PyPI, so this workflow installs it with conda and runs the psi4 tests, which the pip-based workflow
+# (tests.yml) skips. The other tests run there.
 
 on:
   push:
@@ -36,4 +36,4 @@ jobs:
       - name: Check Psi4
         run: python -c "import psi4; print(psi4.__version__)"
       - name: Run tests
-        run: python -m pytest -v test_psi4_interface.py
+        run: python -m pytest -v tests/test_psi4_interface.py
