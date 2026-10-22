@@ -245,7 +245,7 @@ class NPA:
         mo_orth_ok = False
         
         print("Checking whether the basis functions are unity-normalized...")
-        bs_norms = np.diag(overlap_matrix)
+        bs_norms = np.diag(overlap_matrix).copy()  # a copy, np.diag is a view of the matrix rescaled below
         max_dev = 0.0
         max_dev_index = -1
         
@@ -259,10 +259,10 @@ class NPA:
         
         if max_dev > self.options.bf_nrm2_dev_threshold and self.options.do_BS_renormalize:
             print("Trying to make basis functions unity-normalized...")
-            for basf1 in range(n_bas):
-                for basf2 in range(n_bas):
-                    overlap_matrix[basf1, basf2] /= bs_norms[basf1] * bs_norms[basf2]
-                    
+            # bs_norms are norm2s, so the functions are scaled by 1/sqrt(norm2). The MO coefs are kept, i.e. they are
+            # taken to refer to the normalized functions (the Java JANPA divides by the norm2s, leaving S_ii = 1/norm2_i)
+            overlap_matrix /= np.sqrt(np.outer(bs_norms, bs_norms))
+
         if max_dev < self.options.bf_nrm2_dev_threshold or self.options.do_BS_renormalize:
             bs_norms_ok = True
             
