@@ -46,3 +46,15 @@ def test_npa_renormalizes_basis(h2co_molden_path):
     
     assert np.allclose(np.diag(res.overlap_matrix), 1.0)
     assert np.allclose(res.npa_charges, ref, atol=1e-8)
+def test_h2co_tz_naos_orthonormal(h2co_tz_molden_path):
+    """cc-pVTZ has light NRBs, which go through the Schmidt-Lowdin branch of step 6. The NAOs must be orthonormal and the
+    charges equal to those of the Java JANPA."""
+    mf = MoldenFile.load(h2co_tz_molden_path)
+    mf.coords_to_au()
+    mf.to_unnormalized_primitive_coefs()
+    
+    res = run_npa(mf)
+    
+    c = res.nao_to_ao
+    assert np.allclose(c @ res.overlap_matrix @ c.T, np.eye(len(c)), atol=1e-9)
+    assert np.allclose(res.npa_charges, [0.3930297, -0.5690580, 0.0880141, 0.0880141], atol=1e-6)
