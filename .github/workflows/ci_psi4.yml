@@ -1,51 +1,39 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+name: tests-psi4
 
-name: Test-Psi4
+# Psi4 is not on PyPI, so this workflow installs it with conda and runs the full test suite, including the psi4 tests
+# that the pip-based workflow (tests.yml) skips.
 
 on:
   push:
-    branches: [ master]
+    branches: [main]
   pull_request:
-    branches: [ master]
+  workflow_dispatch:
 
 jobs:
-  build:
+  pytest-psi4:
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    defaults:
+      run:
+        # Login shell, so that the conda environment is active in every step
+        shell: bash -el {0}
     steps:
-      - name: Checkout the code
-        uses: actions/checkout@v3
-
-      - name: Set up Conda
-        uses: conda-incubator/setup-miniconda@v2
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
         with:
-          miniconda-version: 'latest'
-          auto-activate-base: false
-          python-version: ["3.10", "3.11", "3.12"] 
-          
-      - name: Initialize Conda for the shell
-        run: |
-          which conda
-          # Initialize Conda
-          conda init bash
-          # Restart the shell to apply changes
-          bash 
-          
-      - name: Create Conda environment and install Psi4
-        run: |
-          conda create --name psi4_env -c conda-forge --override-channels python=3.12 psi4 "einsums=1.1.5" -y
-      - name: Verify Python version with conda run
-        run: |
-          # Verify Python version inside the environment
-          conda run -n psi4_env python --version
-          echo "import psi4" > asd.py
-          echo "print(psi4.__version__)" >> asd.py
-          conda run -n psi4_env python asd.py
-
-      - name: Set up virtual environment and run tests
-        run: |
-
-          conda run -n psi4_env pip install -e .
-          conda run -n psi4_env pip install pyscf pytest
-          conda run -n psi4_env pytest tests/test_psi4_interface.py
+          miniforge-version: latest
+          activate-environment: psi4_env
+          python-version: ${{ matrix.python-version }}
+          channels: conda-forge
+          conda-remove-defaults: true
+      - name: Install Psi4
+        run: conda install -y psi4 numpy scipy pytest
+      - name: Install
+        run: python -m pip install ".[dev]"
+      - name: Check Psi4
+        run: python -c "import psi4; print(psi4.__version__)"
+      - name: Run tests
+        run: python -m pytest -v test_psi4_interface.py
