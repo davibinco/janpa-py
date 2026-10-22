@@ -40,6 +40,20 @@ The `edges` list contains tuples representing the localized orbital pairs:
 - `(i,)` represents a Lone Pair (LP) on a single center.
 - `(i, i+1)` represents a Bonding (BD) and Antibonding (NB) pair between two centers.
 
+## Quick Start with Psi4
+
+The `janpa_psi4_interface` module offers the same functions for a Psi4 `Wavefunction` (Psi4 is installed with conda, e.g. `conda install -c conda-forge psi4`). The returned matrices have one row per orbital and one column per Psi4 AO. Basis sets with d or higher shells must be spherical (`puream true`):
+
+    import psi4
+    from janpa.janpa_psi4_interface import generate_CLPO_molecule_edges
+
+    psi4.set_options({"basis": "cc-pvdz", "puream": True})
+    mol = psi4.geometry("H 0 0 0\nH 0 0 1")
+    _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True)
+
+    # wfn is optional: without it the SCF is run on mol with the current psi4 options
+    clpo_coeff, edges = generate_CLPO_molecule_edges(mol, wfn)
+
 ## References and Attribution
 
 This Python port is based on the original JANPA software developed by Tymofii Nikolaienko, L. A. Bulavin, and D. M. Hovorun. All theoretical foundations and original algorithms belong to the respective authors. Please refer to the [original JANPA webpage](https://janpa.sourceforge.net/) for full references, copyright information, and the original Java binaries.
